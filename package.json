@@ -1,0 +1,58 @@
+{
+  "name": "@b2m9/zod-views",
+  "version": "0.1.0",
+  "description": "Derive safe create, update, and read schemas from one Zod object.",
+  "keywords": [
+    "api",
+    "patch",
+    "schema",
+    "typescript",
+    "validation",
+    "views",
+    "zod"
+  ],
+  "homepage": "https://github.com/b2m9/zod-views#readme",
+  "bugs": {
+    "url": "https://github.com/b2m9/zod-views/issues"
+  },
+  "license": "MIT",
+  "author": "Bob Massarczyk",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/b2m9/zod-views.git"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./dist/index.mjs",
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "vp pack",
+    "dev": "vp pack --watch",
+    "test": "vp test run",
+    "check": "vp check",
+    "check:exports": "vp pack && vp dlx publint@0.3.22 && vp dlx @arethetypeswrong/cli@0.18.5 --pack --profile esm-only",
+    "prepublishOnly": "vp run build"
+  },
+  "devDependencies": {
+    "@types/node": "25.6.2",
+    "@typescript/native-preview": "7.0.0-dev.20260509.2",
+    "typescript": "6.0.3",
+    "vite-plus": "catalog:",
+    "zod": "4.4.3"
+  },
+  "peerDependencies": {
+    "zod": "^4.4.3"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.7.0"
+}

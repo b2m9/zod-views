@@ -1,6 +1,7 @@
 # @b2m9/zod-views
 
-Derive safe `create`, `update`, and `read` schemas from one Zod object.
+Derive strict `create` and `update` inputs and a stripping `read` schema from
+one Zod object and one exhaustive field-role table.
 
 The usual PATCH schema can silently reset stored data:
 
@@ -16,9 +17,11 @@ Merge that parsed patch into an existing task and its omitted status becomes
 `draft`. Zod applies defaults inside optional object fields by design. That is
 useful for create input, but dangerous at a PATCH boundary.
 
-`defineViews` shields every update field:
+`defineViews` gives every mutable update field an undefined-first shield:
 
 ```ts
+import { defineViews } from "@b2m9/zod-views";
+
 const Task = defineViews(TaskCore, {
   id: "server",
   title: "mutable",
@@ -42,13 +45,13 @@ const ProjectCore = z.object({
 defineViews(ProjectCore, {
   id: "server",
   name: "mutable",
-  // error: internalNotes is missing
+  // error: Property 'internalNotes' is missing
 });
 ```
 
-Hand-written Zod can express the same schemas. Ordinary `pick`, `omit`, and
-`partial` chains neither require every field to be classified nor shield
-defaulted update fields. This package makes both properties mandatory.
+You can build the same schemas by hand. This package makes two safety decisions
+mandatory: every field is classified, and an omitted update field cannot run
+its default.
 
 ## Install
 
@@ -56,7 +59,8 @@ defaulted update fields. This package makes both properties mandatory.
 pnpm add @b2m9/zod-views "zod@^4.4.3"
 ```
 
-ESM-only, Node 22+. Zod is the only dependency, and it is a peer.
+Supported environment: ESM, Node 22+, and `zod@^4.4.3`. Zod is the only peer
+dependency.
 
 ## Usage
 
@@ -81,9 +85,12 @@ const User = defineViews(UserCore, {
   displayName: "mutable",
   roleId: "mutable",
 });
+
+type UserUpdate = z.infer<typeof User.update>;
+// { displayName?: string | undefined; roleId?: string | undefined }
 ```
 
-Each field gets one role:
+Each role combines writability with an optional visibility modifier:
 
 | Role          | Create | Update | Read |
 | ------------- | ------ | ------ | ---- |
@@ -113,6 +120,12 @@ const fields = {
 const Task = defineViews(TaskCore, fields);
 ```
 
+Prefer `satisfies FieldsFor<typeof TaskCore>` for a hoisted table. An annotation
+such as `: FieldsFor<typeof TaskCore>` widens every value to the full role
+union. `defineViews` rejects that form because one widened role cannot determine
+one exact view type. `as const` also preserves literal roles, but does not
+validate the table until the call.
+
 ## Semantics
 
 | View     | Fields                         | Boundary            |
@@ -122,11 +135,12 @@ const Task = defineViews(TaskCore, fields);
 | `read`   | every non-hidden field         | strips unknown keys |
 
 The update shield is `z.union([z.undefined(), field]).optional()`. An absent
-JSON property never reaches the original field schema. Explicit `undefined`
-takes the first union branch. Defaults, transforms, and pipes cannot inject a
-value for an absent field. A provided non-`undefined` value still uses the
-original schema. Create keeps defaults. Read validates visible fields while
-stripping hidden and unknown keys.
+JSON property never reaches the original field schema, so defaults, transforms,
+and pipes cannot inject a value. A provided non-`undefined` value still
+validates through the original schema.
+
+Create retains the original field schemas, including defaults. Read validates
+visible fields while stripping hidden and unknown keys.
 
 ## Everything else is your own Zod
 
@@ -152,11 +166,6 @@ Create and update inputs are strict. Unknown keys are rejected so typos surface.
 This also means echoing a fetched entity into a write view fails by design.
 Send only writable fields.
 
-Hoisted tables need `satisfies FieldsFor<typeof Core>` or `as const`. An
-annotation such as `: FieldsFor<typeof Core>` also widens the roles.
-`defineViews` rejects widened roles because they cannot produce one exact view
-type.
-
 Empty updates are valid. Use the `NonEmpty` refinement above if your API rejects
 them.
 
@@ -174,10 +183,6 @@ Constraint failures remain direct issues. Message wording is not promised.
 
 The core must be a plain object without refinements or pipes. Refine the
 derived view that owns the policy instead.
-
-Every core field must be classified. The repetition is the audit.
-
-The peer range is `zod@^4.4.3`.
 
 ## License
 

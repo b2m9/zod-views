@@ -101,6 +101,16 @@ export const rejectedTables = () => {
   // @ts-expect-error annotations erase the literal roles needed for exact view inference.
   defineViews(EntityCore, AnnotatedFields);
 
+  const WidenedFields = {
+    id: "server",
+    titleLength: "mutable",
+    status: "mutable",
+    secret: "server hidden",
+  };
+
+  // @ts-expect-error hoisted role strings need satisfies or as const.
+  defineViews(EntityCore, WidenedFields);
+
   const ConditionalFields = {
     id: "server",
     titleLength: "mutable" as "mutable" | "server",
@@ -110,6 +120,16 @@ export const rejectedTables = () => {
 
   // @ts-expect-error a role union cannot determine one exact runtime view shape.
   defineViews(EntityCore, ConditionalFields);
+
+  const NeverFields = {
+    id: "server",
+    titleLength: "mutable" as never,
+    status: "mutable",
+    secret: "server hidden",
+  } as const;
+
+  // @ts-expect-error never cannot name a runtime field role.
+  defineViews(EntityCore, NeverFields);
 
   class AnnotatedClassFields implements FieldsFor<typeof EntityCore> {
     id: FieldsFor<typeof EntityCore>["id"] = "server";

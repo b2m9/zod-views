@@ -35,12 +35,15 @@ that pass.
   refine the derived view that owns a policy.
 - **Definition is pure.** Never mutate the core, its fields, the role table, or
   a sibling view.
+- **Prototype-named fields keep their policy.** Shape derivation preserves
+  literal `__proto__`; Zod itself omits that key from parsed output, so do not
+  promise or override different baseline behavior.
 - **Use public Zod APIs only.** Do not inspect private definitions or walk
   wrapper internals.
 - **Native errors stay native.** Wrong update types may report
   `invalid_union`; do not rewrite issues or promise Zod's message prose.
-- **Peer behavior stays measured.** Test the `4.4.3` floor and `zod@latest`.
-  Canary failures block release.
+- **Peer behavior stays measured.** Test the `4.4.3` floor and the newest
+  version matching `zod@^4.4.3`. Canary failures block release.
 
 ## Design principles
 

@@ -17,14 +17,25 @@ type IsUnion<Value, Whole = Value> = Value extends Whole
     : true
   : never;
 
-/** A widened role cannot produce one return type that stays true at runtime. */
-export type NarrowRoles<Core extends z.ZodObject<z.ZodRawShape>, Fields extends FieldsFor<Core>> = {
+type WidenedKeys<Core extends z.ZodObject<z.ZodRawShape>, Fields extends FieldsFor<Core>> = {
   [K in keyof Core["shape"]]: [Fields[K]] extends [never]
-    ? never
+    ? K
     : IsUnion<Fields[K]> extends false
-      ? unknown
-      : "Use one literal role; declare hoisted tables with `satisfies FieldsFor<typeof Core>` or `as const`.";
-};
+      ? never
+      : K;
+}[keyof Core["shape"]];
+
+/** A widened role cannot produce one return type that stays true at runtime. */
+export type NarrowRoles<Core extends z.ZodObject<z.ZodRawShape>, Fields extends FieldsFor<Core>> = [
+  WidenedKeys<Core, Fields>,
+] extends [never]
+  ? unknown
+  : {
+      "zod-views: use one literal role per field; declare hoisted tables with `satisfies FieldsFor<typeof Core>` or `as const`": WidenedKeys<
+        Core,
+        Fields
+      >;
+    };
 
 type Shielded<Field extends z.ZodRawShape[string]> = z.ZodOptional<
   z.ZodUnion<readonly [z.ZodUndefined, Field]>

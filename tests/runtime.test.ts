@@ -65,11 +65,22 @@ describe("definition-time checks", () => {
       fields: { title: "sometimes" },
       field: "title",
     },
+    {
+      name: "invalid non-string",
+      fields: { title: Object.create(null) },
+      field: "title",
+    },
   ])("plain JavaScript $name tables throw with the field name", ({ fields, field }) => {
     const error = captureError(() => defineViewsFromJs(z.object({ title: z.string() }), fields));
 
     expect(error.constructor).toBe(Error);
     expect(error.message).toContain(field);
+  });
+
+  test("invalid role errors include the received value", () => {
+    expect(() => defineViewsFromJs(z.object({ title: z.string() }), { title: "mutabel" })).toThrow(
+      'invalid role "mutabel"',
+    );
   });
 
   test.each([

@@ -46,14 +46,17 @@ defineViews(ProjectCore, {
 });
 ```
 
-Hand-written `pick`, `omit`, and `partial` chains can express the same schemas.
-They do not require every field to be classified. This package does.
+Hand-written Zod can express the same schemas. Ordinary `pick`, `omit`, and
+`partial` chains neither require every field to be classified nor shield
+defaulted update fields. This package makes both properties mandatory.
 
 ## Install
 
 ```sh
-pnpm add @b2m9/zod-views zod
+pnpm add @b2m9/zod-views "zod@^4.4.3"
 ```
+
+ESM-only, Node 22+. Zod is the only dependency, and it is a peer.
 
 ## Usage
 
@@ -82,16 +85,14 @@ const User = defineViews(UserCore, {
 
 Each field gets one role:
 
-| Role                 | Create | Update | Read |
-| -------------------- | ------ | ------ | ---- |
-| `mutable`            | yes    | yes    | yes  |
-| `mutable hidden`     | yes    | yes    | no   |
-| `create-only`        | yes    | no     | yes  |
-| `create-only hidden` | yes    | no     | no   |
-| `server`             | no     | no     | yes  |
-| `server hidden`      | no     | no     | no   |
+| Role          | Create | Update | Read |
+| ------------- | ------ | ------ | ---- |
+| `mutable`     | yes    | yes    | yes  |
+| `create-only` | yes    | no     | yes  |
+| `server`      | no     | no     | yes  |
 
-Writability controls create and update. `hidden` controls read.
+Append ` hidden` to any role to remove the field from `read`. Visibility never
+changes writability.
 
 ## API
 
@@ -104,7 +105,11 @@ For a table declared separately, use the package's only exported type:
 ```ts
 import { defineViews, type FieldsFor } from "@b2m9/zod-views";
 
-const fields = { id: "server", title: "mutable" } satisfies FieldsFor<typeof TaskCore>;
+const fields = {
+  id: "server",
+  title: "mutable",
+  status: "mutable",
+} satisfies FieldsFor<typeof TaskCore>;
 const Task = defineViews(TaskCore, fields);
 ```
 
@@ -117,10 +122,11 @@ const Task = defineViews(TaskCore, fields);
 | `read`   | every non-hidden field         | strips unknown keys |
 
 The update shield is `z.union([z.undefined(), field]).optional()`. An absent
-JSON property takes the `undefined` branch before the original field can run.
-Defaults, transforms, and pipes cannot inject a value for that absent field.
-A provided non-`undefined` value still uses the original schema. Create keeps
-defaults. Read validates visible fields while stripping hidden and unknown keys.
+JSON property never reaches the original field schema. Explicit `undefined`
+takes the first union branch. Defaults, transforms, and pipes cannot inject a
+value for an absent field. A provided non-`undefined` value still uses the
+original schema. Create keeps defaults. Read validates visible fields while
+stripping hidden and unknown keys.
 
 ## Everything else is your own Zod
 
@@ -146,15 +152,19 @@ Create and update inputs are strict. Unknown keys are rejected so typos surface.
 This also means echoing a fetched entity into a write view fails by design.
 Send only writable fields.
 
-Hoisted tables need `satisfies FieldsFor<typeof Core>` or `as const`. Otherwise,
-their role strings widen to `string`.
+Hoisted tables need `satisfies FieldsFor<typeof Core>` or `as const`. An
+annotation such as `: FieldsFor<typeof Core>` also widens the roles.
+`defineViews` rejects widened roles because they cannot produce one exact view
+type.
 
 Empty updates are valid. Use the `NonEmpty` refinement above if your API rejects
 them.
 
-Explicit `undefined` is accepted and preserved as `{ field: undefined }`, as
-with a Zod partial. JSON request bodies cannot contain `undefined`. If your
-merge distinguishes absence from `undefined`, drop those keys before merging.
+Explicit `undefined` short-circuits the field schema and remains present as
+`{ field: undefined }`. For a defaulted field this differs from `.partial()`,
+which materializes the default. JSON request bodies cannot contain `undefined`.
+If your merge distinguishes absence from `undefined`, drop those keys before
+merging.
 
 Read validates as well as strips. A visible field with invalid stored data
 throws instead of returning a sanitized partial row.

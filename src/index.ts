@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { FieldsFor, ViewsFor } from "./types.ts";
+import type { FieldsFor, NarrowRoles, ViewsFor } from "./types.ts";
 
 const roles = new Set([
   "mutable",
@@ -47,7 +47,7 @@ function assertFields(shape: z.ZodRawShape, fields: Readonly<Record<string, unkn
 export function defineViews<
   Core extends z.ZodObject<z.ZodRawShape>,
   const Fields extends FieldsFor<Core>,
->(core: Core, fields: Fields): ViewsFor<Core, Fields> {
+>(core: Core, fields: Fields & NarrowRoles<Core, Fields>): ViewsFor<Core, Fields> {
   assertPlainObject(core);
   assertFields(core.shape, fields);
 

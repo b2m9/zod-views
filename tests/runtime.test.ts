@@ -8,6 +8,18 @@ const defineViewsFromJs = defineViews as unknown as (
   fields: Record<string, unknown>,
 ) => unknown;
 
+function captureError(operation: () => unknown): Error {
+  try {
+    operation();
+  } catch (error) {
+    if (error instanceof Error) {
+      return error;
+    }
+    throw error;
+  }
+  throw new Error("Expected the operation to throw.");
+}
+
 describe("stop-ship runtime gates", () => {
   test("wrong-type updates retain the native union issue", () => {
     const Core = z.object({ count: z.number().min(1) });
@@ -54,7 +66,10 @@ describe("definition-time checks", () => {
       field: "title",
     },
   ])("plain JavaScript $name tables throw with the field name", ({ fields, field }) => {
-    expect(() => defineViewsFromJs(z.object({ title: z.string() }), fields)).toThrow(field);
+    const error = captureError(() => defineViewsFromJs(z.object({ title: z.string() }), fields));
+
+    expect(error.constructor).toBe(Error);
+    expect(error.message).toContain(field);
   });
 
   test.each([
@@ -163,15 +178,22 @@ describe("fixed boundaries", () => {
     const Core = z.object({ title: z.string() });
     const Views = defineViews(Core, { title: "mutable" });
 
-    expect(() => Views.create.parse({ title: "kept", titel: "typo" })).toThrow();
+    const result = Views.create.safeParse({ title: "kept", titel: "typo" });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues).toContainEqual(
+        expect.objectContaining({ code: "unrecognized_keys", keys: ["titel"] }),
+      );
+    }
   });
 
-  test("update rejects server fields", () => {
+  test.each(["create", "update"] as const)("%s rejects server fields", (view) => {
     const Core = z.object({ id: z.uuid(), title: z.string() });
     const Views = defineViews(Core, { id: "server", title: "mutable" });
 
     expect(() =>
-      Views.update.parse({
+      Views[view].parse({
         id: "3f975ea5-df7b-4eb0-8585-ef6bf73de57d",
         title: "kept",
       }),

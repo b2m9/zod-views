@@ -51,9 +51,10 @@ export function defineViews<
   assertPlainObject(core);
   assertFields(core.shape, fields);
 
-  const create: Record<string, z.ZodRawShape[string]> = {};
-  const update: Record<string, z.ZodRawShape[string]> = {};
-  const read: Record<string, z.ZodRawShape[string]> = {};
+  // Null prototypes keep every legal Zod key as an own property during assignment.
+  const create = Object.create(null) as Record<string, z.ZodRawShape[string]>;
+  const update = Object.create(null) as Record<string, z.ZodRawShape[string]>;
+  const read = Object.create(null) as Record<string, z.ZodRawShape[string]>;
 
   for (const [key, field] of Object.entries(core.shape)) {
     const role = fields[key];

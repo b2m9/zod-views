@@ -99,6 +99,21 @@ describe("role derivation", () => {
     expect(Object.hasOwn(Views.update.shape, field)).toBe(update);
     expect(Object.hasOwn(Views.read.shape, field)).toBe(read);
   });
+
+  test("computed prototype-named fields retain their membership", () => {
+    const PrototypeCore = z.object({
+      ["__proto__"]: z.string(),
+      normal: z.string(),
+    });
+    const PrototypeViews = defineViews(PrototypeCore, {
+      ["__proto__"]: "mutable",
+      normal: "mutable",
+    });
+
+    expect(Object.hasOwn(PrototypeViews.create.shape, "__proto__")).toBe(true);
+    expect(Object.hasOwn(PrototypeViews.update.shape, "__proto__")).toBe(true);
+    expect(Object.hasOwn(PrototypeViews.read.shape, "__proto__")).toBe(true);
+  });
 });
 
 describe("update shield", () => {

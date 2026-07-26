@@ -25,16 +25,25 @@ type WidenedKeys<Core extends z.ZodObject<z.ZodRawShape>, Fields extends FieldsF
       : K;
 }[keyof Core["shape"]];
 
-/** A widened role cannot produce one return type that stays true at runtime. */
-export type NarrowRoles<Core extends z.ZodObject<z.ZodRawShape>, Fields extends FieldsFor<Core>> = [
-  WidenedKeys<Core, Fields>,
+type StaleKeys<Core extends z.ZodObject<z.ZodRawShape>, Fields extends FieldsFor<Core>> = Exclude<
+  keyof Fields,
+  keyof Core["shape"]
+>;
+
+/** Structural constraints otherwise admit stale keys and ambiguous role unions. */
+export type ExactRoles<Core extends z.ZodObject<z.ZodRawShape>, Fields extends FieldsFor<Core>> = [
+  StaleKeys<Core, Fields>,
 ] extends [never]
-  ? unknown
+  ? [WidenedKeys<Core, Fields>] extends [never]
+    ? unknown
+    : {
+        "zod-views: use one literal role per field; declare hoisted tables with `satisfies FieldsFor<typeof Core>` or `as const`": WidenedKeys<
+          Core,
+          Fields
+        >;
+      }
   : {
-      "zod-views: use one literal role per field; declare hoisted tables with `satisfies FieldsFor<typeof Core>` or `as const`": WidenedKeys<
-        Core,
-        Fields
-      >;
+      "zod-views: remove table entries that name no core field": StaleKeys<Core, Fields>;
     };
 
 type Shielded<Field extends z.ZodRawShape[string]> = z.ZodOptional<

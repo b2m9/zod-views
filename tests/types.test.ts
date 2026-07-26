@@ -156,4 +156,16 @@ export const rejectedTables = () => {
 
   // @ts-expect-error role typos are outside the closed vocabulary.
   defineViews(TaskCore, { id: "server", title: "mutabel" });
+
+  // @ts-expect-error a renamed core field leaves a stale inline entry behind.
+  defineViews(TaskCore, { id: "server", title: "mutable", subtitle: "mutable" });
+
+  const StaleFields = {
+    id: "server",
+    title: "mutable",
+    subtitle: "mutable",
+  } as const;
+
+  // @ts-expect-error a stale entry survives as const and must fail at the call.
+  defineViews(TaskCore, StaleFields);
 };

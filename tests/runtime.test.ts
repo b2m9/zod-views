@@ -31,6 +31,7 @@ describe("stop-ship runtime gates", () => {
     if (!result.success) {
       expect(result.error.issues).toHaveLength(1);
       expect(result.error.issues[0]?.code).toBe("invalid_union");
+      expect(result.error.issues[0]?.path).toEqual(["count"]);
     }
   });
 
@@ -44,6 +45,7 @@ describe("stop-ship runtime gates", () => {
     if (!result.success) {
       expect(result.error.issues).toHaveLength(1);
       expect(result.error.issues[0]?.code).toBe("too_small");
+      expect(result.error.issues[0]?.path).toEqual(["count"]);
     }
   });
 });
@@ -83,9 +85,19 @@ describe("definition-time checks", () => {
     );
   });
 
+  test("inherited Object.prototype values cannot classify a field", () => {
+    const error = captureError(() => defineViewsFromJs(z.object({ toString: z.string() }), {}));
+
+    expect(error.message).toContain('"toString" is missing');
+  });
+
+  const PlainCore = z.object({ title: z.string() });
+
   test.each([
-    z.object({ title: z.string() }).refine(() => true),
-    z.object({ title: z.string() }).pipe(z.object({ title: z.string() })),
+    PlainCore.refine(() => true),
+    PlainCore.superRefine(() => {}),
+    PlainCore.check(() => {}),
+    PlainCore.pipe(PlainCore),
     z.string(),
   ])("refined, piped, and non-object cores name the fix", (core) => {
     expect(() => defineViewsFromJs(core, { title: "mutable" })).toThrow(
@@ -164,6 +176,21 @@ describe("update shield", () => {
 
   test("absent defaults do not enter a patch", () => {
     expect(Views.update.parse({})).toEqual({});
+  });
+
+  test("absent fields never execute their original schema", () => {
+    let executions = 0;
+    const guarded = z
+      .string()
+      .default("injected")
+      .transform(() => {
+        executions += 1;
+        throw new Error("field schema executed");
+      });
+    const GuardedViews = defineViews(z.object({ guarded }), { guarded: "mutable" });
+
+    expect(GuardedViews.update.parse({})).toEqual({});
+    expect(executions).toBe(0);
   });
 
   test("explicit undefined bypasses the field and remains present", () => {

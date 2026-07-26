@@ -7,6 +7,13 @@ on:
   schedule:
     - cron: "17 6 * * 1"
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ci:
     name: Node ${{ matrix.node }} / Zod ${{ matrix.zod }}
@@ -33,7 +40,13 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Install zod@${{ matrix.zod }}
         if: matrix.zod != '4.4.3'
-        run: pnpm update --workspace-root --no-save --no-lockfile "zod@${{ matrix.zod }}"
+        run: |
+          zod_version="$(
+            npm view "zod@${{ matrix.zod }}" version --json |
+              jq -r 'if type == "array" then last else . end'
+          )"
+          pnpm update --workspace-root --no-save "zod@$zod_version"
+          test "$(node -p "require('zod/package.json').version")" = "$zod_version"
       - run: pnpm run check
       - run: pnpm test
       - run: pnpm run check:exports

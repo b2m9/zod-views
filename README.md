@@ -13,9 +13,10 @@ const update = TaskCore.omit({ id: true }).partial();
 update.parse({ title: "Q3 Report" }); // { title: "Q3 Report", status: "draft" }
 ```
 
-Merge that parsed patch into an existing task and its omitted status becomes
-`draft`. Zod applies defaults inside optional object fields by design. That is
-useful for create input, but dangerous at a PATCH boundary.
+The client sent a title. It got back a status. Merge that parsed patch into an
+existing task and its omitted status becomes `draft`. Zod applies defaults
+inside optional object fields by design. That is useful for create input, but
+dangerous at a PATCH boundary.
 
 `defineViews` gives every mutable update field an undefined-first shield:
 
@@ -157,8 +158,9 @@ const NonEmpty = User.update.refine((patch) =>
 
 ## Use plain Zod instead
 
-Use plain Zod for unions, commands, events, search parameters, and one-off
-request bodies. They do not need an entity view table.
+Use plain Zod when the thing is not one entity exposed three ways. Unions,
+commands, events, search parameters, and one-off request bodies do not need an
+entity view table.
 
 ## Guardrails
 
@@ -183,6 +185,9 @@ Constraint failures remain direct issues. Message wording is not promised.
 
 The core must be a plain object without refinements or pipes. Refine the
 derived view that owns the policy instead.
+
+Classify every field. The repetition is the audit; there is no opt-out. Missing,
+stale, and invalid entries also throw at definition time for JavaScript callers.
 
 ## License
 

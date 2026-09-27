@@ -204,6 +204,12 @@ describe("update shield", () => {
     expect(Views.update.parse({ title: "kept" })).toEqual({ title: "kept" });
   });
 
+  test("the update view converts to JSON Schema", () => {
+    expect(z.toJSONSchema(Views.update, { io: "input" }).properties?.title).toEqual({
+      anyOf: [{ not: {} }, { type: "string", minLength: 1 }],
+    });
+  });
+
   test("composition remains ordinary Zod", () => {
     expect(Views.update.omit({ title: true }).parse({ status: "live" })).toEqual({
       status: "live",

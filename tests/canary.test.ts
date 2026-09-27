@@ -23,7 +23,10 @@ test("an optional never accepts only undefined and renders as an empty-match sch
   const absent = z.never().optional();
 
   expect(absent.parse(undefined)).toBeUndefined();
-  expect(absent.safeParse(null).success).toBe(false);
+  // A defined value accepted here would skip the field schema in the shield.
+  for (const value of [null, false, 0, "", {}]) {
+    expect(absent.safeParse(value).success).toBe(false);
+  }
   expect(z.toJSONSchema(absent)).toMatchObject({ not: {} });
 });
 

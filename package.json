@@ -1,6 +1,6 @@
 {
   "name": "@b2m9/zod-views",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Derive safe create, update, and read schemas from one Zod object.",
   "keywords": [
     "api",

@@ -1,0 +1,3 @@
+# Protect GitHub configuration that can affect CI and publishing.
+/.github/CODEOWNERS @b2m9
+/.github/workflows/** @b2m9

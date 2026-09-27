@@ -84,6 +84,10 @@ jobs:
           npm --version
           npm stage --help
 
+      # Publishing ignores lifecycle scripts, so dist must be built here.
+      - name: Build package
+        run: vp run build
+
       - name: Dry-run npm package contents
         run: npm pack --dry-run
 

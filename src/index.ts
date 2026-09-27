@@ -73,8 +73,10 @@ export function defineViews<
     }
     if (role.startsWith("mutable")) {
       create[key] = field;
-      // Undefined must win before a default or transform can observe absence.
-      update[key] = z.union([z.undefined(), field]).optional();
+      // Absence must win before a default or transform can observe it.
+      // `z.never().optional()` accepts only `undefined` and, unlike `z.undefined()`,
+      // is representable in JSON Schema.
+      update[key] = z.union([z.never().optional(), field]).optional();
     } else if (role.startsWith("create-only")) {
       create[key] = field;
     }

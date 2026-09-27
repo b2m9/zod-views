@@ -47,7 +47,7 @@ export type ExactRoles<Core extends z.ZodObject<z.ZodRawShape>, Fields extends F
     };
 
 type Shielded<Field extends z.ZodRawShape[string]> = z.ZodOptional<
-  z.ZodUnion<readonly [z.ZodUndefined, Field]>
+  z.ZodUnion<readonly [z.ZodOptional<z.ZodNever>, Field]>
 >;
 
 type CreateShape<Core extends z.ZodObject<z.ZodRawShape>, Fields extends FieldsFor<Core>> = {

@@ -22,8 +22,10 @@ that pass.
 - **Roles stay one flat table.** Writability is `mutable`, `create-only`, or
   `server`; appending ` hidden` controls read visibility.
 - **The shield stays undefined-first.** Every mutable update field is
-  `z.union([z.undefined(), field]).optional()`. Do not replace it with
-  `.partial()` or reorder the union.
+  `z.union([z.never().optional(), field]).optional()`. The first branch
+  accepts only `undefined` and stays representable in JSON Schema. Do not
+  replace it with `.partial()`, `.optional()`, or `.exactOptional()`, which
+  apply defaults to absent keys, or reorder the union.
 - **Inference identity is a release gate.** Both `z.input` and `z.output` must
   equal the hand-written counterparts, including transforms and defaults.
   Internal casts must never widen the returned schemas.

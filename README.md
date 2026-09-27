@@ -140,7 +140,9 @@ JSON property never reaches the original field schema, so defaults, transforms,
 and pipes cannot inject a value. A provided non-`undefined` value still
 validates through the original schema.
 
-Every view converts with `z.toJSONSchema`. In `update`, each field renders as
+The views add nothing that JSON Schema cannot represent. `z.toJSONSchema`
+converts a view whenever it converts the core with the same options, such as
+`io: "input"` for transforms. In `update`, each field renders as
 `anyOf: [{ not: {} }, field]`. The first branch matches nothing, so the field's
 own schema decides. The field branch keeps its own annotations, including
 `default`, although `update` never applies one.

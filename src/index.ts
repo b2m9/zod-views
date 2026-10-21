@@ -1,6 +1,6 @@
 // esbuild cannot tree-shake property access on the `z` namespace object, so named
 // imports keep zod-views from pulling all of Zod into consumer bundles.
-import { never as zNever, object, strictObject, union, ZodObject, type ZodRawShape } from "zod";
+import { nonoptional, object, optional, strictObject, ZodObject, type ZodRawShape } from "zod";
 
 import type { ExactRoles, FieldsFor, ViewsFor } from "./types.ts";
 
@@ -75,10 +75,10 @@ export function defineViews<
     }
     if (role.startsWith("mutable")) {
       create[key] = field;
-      // Absence must win before a default or transform can observe it.
-      // `z.never().optional()` accepts only `undefined` and, unlike `z.undefined()`,
-      // is representable in JSON Schema.
-      update[key] = union([zNever().optional(), field]).optional();
+      // `nonoptional` hides the field's optional input, so `optional` returns
+      // `undefined` itself before a default, prefault, or transform can observe
+      // absence. The result renders as the plain field in JSON Schema.
+      update[key] = optional(nonoptional(field));
     } else if (role.startsWith("create-only")) {
       create[key] = field;
     }

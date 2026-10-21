@@ -22,10 +22,11 @@ that pass.
 - **Roles stay one flat table.** Writability is `mutable`, `create-only`, or
   `server`; appending ` hidden` controls read visibility.
 - **The shield stays undefined-first.** Every mutable update field is
-  `z.union([z.never().optional(), field]).optional()`. The first branch
-  accepts only `undefined` and stays representable in JSON Schema. Do not
-  replace it with `.partial()`, `.optional()`, or `.exactOptional()`, which
-  apply defaults to absent keys, or reorder the union.
+  `z.optional(z.nonoptional(field))`. `nonoptional` hides the field's optional
+  input, so `optional` returns `undefined` without running the field, and the
+  result renders as the plain field in JSON Schema. Do not replace it with
+  `.partial()`, `.optional()`, or `.exactOptional()`, which run defaults for
+  absent keys, and do not drop `nonoptional`.
 - **Inference identity is a release gate.** Both `z.input` and `z.output` must
   equal the hand-written counterparts, including transforms and defaults.
   Internal casts must never widen the returned schemas.
@@ -42,8 +43,8 @@ that pass.
   promise or override different baseline behavior.
 - **Use public Zod APIs only.** Do not inspect private definitions or walk
   wrapper internals.
-- **Native errors stay native.** Wrong update types may report
-  `invalid_union`; do not rewrite issues or promise Zod's message prose.
+- **Native errors stay native.** Wrong update types report the field's direct
+  issue; do not rewrite issues or promise Zod's message prose.
 - **Peer behavior stays measured.** Test the `4.4.3` floor and the newest
   version matching `zod@^4.4.3`. Canary failures block release.
 

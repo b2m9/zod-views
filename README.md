@@ -135,17 +135,27 @@ validate the table until the call.
 | `update` | mutable, shielded and optional | strict              |
 | `read`   | every non-hidden field         | strips unknown keys |
 
-The update shield is `z.union([z.never().optional(), field]).optional()`. An absent
-JSON property never reaches the original field schema, so defaults, transforms,
-and pipes cannot inject a value. A provided non-`undefined` value still
-validates through the original schema.
+The update shield is `z.optional(z.nonoptional(field))`. An absent JSON property
+never reaches the original field schema, so defaults, prefaults, transforms, and
+pipes cannot inject a value. A provided non-`undefined` value still validates
+through the original schema. A provided value that the field transforms to
+`undefined` fails with `invalid_type`.
 
 The views add nothing that JSON Schema cannot represent. `z.toJSONSchema`
 converts a view whenever it converts the core with the same options, such as
-`io: "input"` for transforms. In `update`, each field renders as
-`anyOf: [{ not: {} }, field]`. The first branch matches nothing, so the field's
-own schema decides. The field branch keeps its own annotations, including
-`default`, although `update` never applies one.
+`io: "input"` for transforms. In `update`, each field renders as the field's own
+schema with its own annotations, including `default`, although `update` never
+applies one. Drop that annotation with an override if your tooling reads it:
+
+```ts
+z.toJSONSchema(Task.update, {
+  override: ({ zodSchema, jsonSchema }) => {
+    if (zodSchema instanceof z.ZodOptional && zodSchema.unwrap() instanceof z.ZodNonOptional) {
+      delete jsonSchema.default;
+    }
+  },
+});
+```
 
 Create retains the original field schemas, including defaults. Read validates
 visible fields while stripping hidden and unknown keys.
@@ -187,8 +197,8 @@ merging.
 Read validates as well as strips. A visible field with invalid stored data
 throws instead of returning a sanitized partial row.
 
-A wrong-type update value produces Zod's native `invalid_union` issue.
-Constraint failures remain direct issues. Message wording is not promised.
+A wrong update value reports the field's own issue, such as `invalid_type` or
+`too_small`. Message wording is not promised.
 
 The core must be a plain object without refinements or pipes. Refine the
 derived view that owns the policy instead.

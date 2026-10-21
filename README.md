@@ -145,7 +145,9 @@ The views add nothing that JSON Schema cannot represent. `z.toJSONSchema`
 converts a view whenever it converts the core with the same options, such as
 `io: "input"` for transforms. In `update`, each field renders as the field's own
 schema with its own annotations, including `default`, although `update` never
-applies one. Drop that annotation with an override if your tooling reads it:
+applies one. Drop that annotation with an override if your tooling reads it. A
+field registered with an `id` renders as a shared `$ref`, and its definition
+keeps the `default` that `create` and `read` document:
 
 ```ts
 z.toJSONSchema(Task.update, {

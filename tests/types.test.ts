@@ -212,6 +212,9 @@ export const rejectedTables = () => {
 
   // @ts-expect-error a stale entry survives as const and must fail at the call.
   defineViews(TaskCore, StaleFields);
+
+  // @ts-expect-error a numeric stale entry is still a stale entry.
+  defineViews(TaskCore, { id: "server", title: "mutable", 1: "mutable" });
 };
 
 // Shaped like Drizzle's `$inferSelect`: every column present, nullable columns
@@ -372,6 +375,9 @@ export const rejectedBindings = () => {
 
   // @ts-expect-error stale names neither a core field nor a row column.
   defineViews(PaymentCore, { ...roles, stale: "unmapped" }, storedAs<PaymentRow>());
+
+  // @ts-expect-error a numeric entry names neither a core field nor a row column.
+  defineViews(PaymentCore, { ...roles, 1: "unmapped" }, storedAs<PaymentRow>());
 
   // @ts-expect-error unmapped is not a core field role.
   defineViews(PaymentCore, { ...roles, note: "unmapped" }, storedAs<PaymentRow>());

@@ -67,8 +67,8 @@ type StaleKeys<Core extends z.ZodObject<z.ZodRawShape>, Fields extends CoreField
 >;
 
 /** The key sits in the property name, which every compiler surface prints in full. */
-type Labelled<Keys, Message extends string> = {
-  [K in Keys as `zod-views: \`${K & string}\` ${Message}`]: K;
+type Labelled<Keys extends PropertyKey, Message extends string> = {
+  [K in Keys as K extends string | number ? `zod-views: \`${K}\` ${Message}` : K]: K;
 };
 
 /** Structural constraints otherwise admit stale keys and ambiguous role unions. */

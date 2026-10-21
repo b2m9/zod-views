@@ -1,4 +1,6 @@
-import { z } from "zod";
+// esbuild cannot tree-shake property access on the `z` namespace object, so named
+// imports keep zod-views from pulling all of Zod into consumer bundles.
+import { never as zNever, object, strictObject, union, ZodObject, type ZodRawShape } from "zod";
 
 import type { ExactRoles, FieldsFor, ViewsFor } from "./types.ts";
 
@@ -11,8 +13,8 @@ const roles = new Set([
   "server hidden",
 ]);
 
-function assertPlainObject(core: unknown): asserts core is z.ZodObject {
-  if (!(core instanceof z.ZodObject)) {
+function assertPlainObject(core: unknown): asserts core is ZodObject {
+  if (!(core instanceof ZodObject)) {
     throw new Error("Core must be a plain Zod object; refine the derived views instead.");
   }
 
@@ -45,16 +47,16 @@ function describeRole(role: unknown): string {
 
 /** Derives fixed write and read boundaries from one exhaustive field policy. */
 export function defineViews<
-  Core extends z.ZodObject<z.ZodRawShape>,
+  Core extends ZodObject<ZodRawShape>,
   const Fields extends FieldsFor<Core>,
 >(core: Core, fields: Fields & ExactRoles<Core, Fields>): ViewsFor<Core, Fields> {
   assertPlainObject(core);
   const shape = core.shape;
 
   // Null prototypes keep every legal Zod key as an own property during assignment.
-  const create = Object.create(null) as Record<string, z.ZodRawShape[string]>;
-  const update = Object.create(null) as Record<string, z.ZodRawShape[string]>;
-  const read = Object.create(null) as Record<string, z.ZodRawShape[string]>;
+  const create = Object.create(null) as Record<string, ZodRawShape[string]>;
+  const update = Object.create(null) as Record<string, ZodRawShape[string]>;
+  const read = Object.create(null) as Record<string, ZodRawShape[string]>;
 
   for (const [key, field] of Object.entries(shape)) {
     if (!Object.hasOwn(fields, key)) {
@@ -76,7 +78,7 @@ export function defineViews<
       // Absence must win before a default or transform can observe it.
       // `z.never().optional()` accepts only `undefined` and, unlike `z.undefined()`,
       // is representable in JSON Schema.
-      update[key] = z.union([z.never().optional(), field]).optional();
+      update[key] = union([zNever().optional(), field]).optional();
     } else if (role.startsWith("create-only")) {
       create[key] = field;
     }
@@ -91,9 +93,9 @@ export function defineViews<
   // The keyed loop mirrors type filters the compiler cannot follow.
   // Inference tests pin the asserted correspondence.
   return {
-    create: z.strictObject(create),
-    update: z.strictObject(update),
-    read: z.object(read),
+    create: strictObject(create),
+    update: strictObject(update),
+    read: object(read),
   } as unknown as ViewsFor<Core, Fields>;
 }
 

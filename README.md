@@ -92,9 +92,12 @@ Stale and misspelled entries fail the same way.
 | `mutable`     | yes      | optional, shielded | yes    |
 | `create-only` | yes      | no                 | yes    |
 | `server`      | no       | no                 | yes    |
+| `unmapped`    | no       | no                 | no     |
 
-Append ` hidden` to any role to remove the field from `read`. Visibility never
-changes writability.
+Append ` hidden` to `mutable`, `create-only`, or `server` to remove the field
+from `read`. Visibility never changes writability. `unmapped` exists only with
+a [bound row](#binding-to-a-stored-row) and classifies a column without a core
+field.
 
 - `create` and `update` reject unknown keys. `read` strips hidden and unknown
   keys and validates the rest, so invalid stored data throws.
@@ -134,7 +137,8 @@ exactly that. This package makes the classification exhaustive and the patch
 shield impossible to forget. drizzle-zod derives insert, update, and select
 schemas from Drizzle tables, and Prisma generators derive them from a Prisma
 schema. zod-views starts from any Zod object, such as an API contract that
-differs from the table, and assigns each field an API role.
+differs from the table, assigns each field an API role, and can check that
+object against the table's row type.
 
 ## Install
 
@@ -189,6 +193,75 @@ const NonEmptyUpdate = User.update.refine((p) => Object.values(p).some((v) => v 
 PublicUser.parse(stored); // { id: '3f975ea5-df7b-4eb0-8585-ef6bf73de57d', name: 'Ada', plan: 'pro' }
 NonEmptyUpdate.safeParse({}).success; // false
 ```
+
+## Binding to a stored row
+
+Pass `storedAs<Row>()` as a third argument to tie the table to a stored row
+type, such as Drizzle's `typeof payment.$inferSelect`. Row is any object type;
+zod-views never reads a table definition.
+
+```ts
+import { defineViews, storedAs } from "@b2m9/zod-views";
+
+type PaymentRow = {
+  id: string;
+  amount: string; // a numeric column
+  note: string | null;
+  railReference: string | null;
+};
+
+const PaymentCore = z.object({
+  id: z.uuid(),
+  amount: z.codec(z.number(), z.string(), {
+    decode: (wire) => wire.toFixed(2),
+    encode: (stored) => Number(stored),
+  }),
+  note: z.string().nullable(),
+});
+
+const Payment = defineViews(
+  PaymentCore,
+  { id: "server", amount: "create-only", note: "mutable", railReference: "unmapped" },
+  storedAs<PaymentRow>(),
+);
+```
+
+The views are the ones the table derives without a row. The call stops
+compiling when:
+
+1. Row is `any`, `never`, a union, or has an index signature.
+2. A core field is not a row column.
+3. A row column has no entry. `unmapped` keeps it out of every view.
+4. An entry names neither a core field nor a row column.
+5. A core field's output differs from its column in type or optionality.
+
+Outputs are compared because writes store them. A row always has every
+column, so `.optional()` and `.exactOptional()` fields fail; use `.nullable()`
+for a nullable column or `.default()` when absent input still stores a value. An enum fails
+against a `text` column until the column is narrowed, for example with
+Drizzle's `text({ enum })` or `$type<>()`. An untyped `json()` column is
+`unknown`, which only `z.unknown()` matches; give the column a `$type<>()` to
+validate its contents. `any` on either side fails.
+
+A codec stores its output, so reads go back through `z.encode`:
+
+```ts
+const row = {
+  id: "3f975ea5-df7b-4eb0-8585-ef6bf73de57d",
+  amount: "12.50",
+  note: null,
+  railReference: null,
+};
+
+Payment.create.parse({ amount: 12.5, note: null }); // { amount: '12.50', note: null }
+z.encode(Payment.read, row); // { id: '3f975ea5-df7b-4eb0-8585-ef6bf73de57d', amount: 12.5, note: null }
+Payment.read.safeParse(row).success; // false
+```
+
+Hoisted tables use `satisfies FieldsFor<typeof PaymentCore, PaymentRow>`.
+Insert completeness is not checked. Row types are erased at runtime, so
+JavaScript callers get the core checks and `unmapped` entries, but no check
+that every column is classified.
 
 ## JSON Schema and OpenAPI
 

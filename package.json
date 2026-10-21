@@ -43,8 +43,8 @@
   },
   "devDependencies": {
     "@types/node": "26.6.5",
-    "@typescript/native-preview": "7.0.0-dev.20260509.2",
-    "typescript": "6.0.3",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
+    "typescript": "7.0.2",
     "vite-plus": "catalog:",
     "zod": "4.4.3"
   },

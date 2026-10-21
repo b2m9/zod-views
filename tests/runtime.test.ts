@@ -437,6 +437,13 @@ describe("row binding", () => {
     expect(Bound.read.safeParse(row).success).toBe(false);
   });
 
+  test("a bound one-way transform cannot read through z.encode", () => {
+    const Core = z.object({ label: z.string().transform((value) => value.length) });
+    const Views = defineViews(Core, { label: "server" }, storedAs<{ label: number }>());
+
+    expect(() => z.encode(Views.read, { label: 3 })).toThrow(z.core.$ZodEncodeError);
+  });
+
   test("unmapped on a core field names the field", () => {
     expect(() =>
       defineViewsFromJs(PaymentCore, { ...roles, note: "unmapped" }, storedAs()),

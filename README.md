@@ -197,8 +197,9 @@ NonEmptyUpdate.safeParse({}).success; // false
 ## Binding to a stored row
 
 Pass `storedAs<Row>()` as a third argument to tie the table to a stored row
-type, such as Drizzle's `typeof payment.$inferSelect`. Row is any object type;
-zod-views never reads a table definition.
+type, such as Drizzle's `typeof payment.$inferSelect`. Row must be a finite,
+non-union object type with string keys and no index signatures, whether an ORM
+infers it or you write it; zod-views never reads a table definition.
 
 ```ts
 import { defineViews, storedAs } from "@b2m9/zod-views";
@@ -235,13 +236,17 @@ compiling when:
 4. An entry names neither a core field nor a row column.
 5. A core field's output differs from its column in type or optionality.
 
-Outputs are compared because writes store them. A row always has every
-column, so `.optional()` and `.exactOptional()` fields fail; use `.nullable()`
-for a nullable column or `.default()` when absent input still stores a value. An enum fails
-against a `text` column until the column is narrowed, for example with
-Drizzle's `text({ enum })` or `$type<>()`. An untyped `json()` column is
-`unknown`, which only `z.unknown()` matches; give the column a `$type<>()` to
-validate its contents. `any` on either side fails.
+Outputs are compared because writes store them. The comparison needs
+`strictNullChecks`; without it, `z.string()` matches a `string | null` column.
+`.optional()` and `.exactOptional()` fields fail against required columns; use
+`.nullable()` for a nullable column or `.default()` when absent input still
+stores a value. A matching optional Row property is accepted, and telling
+`p?: string` from `p?: string | undefined` needs `exactOptionalPropertyTypes`.
+An enum fails against a `text` column until the column is narrowed, for
+example with Drizzle's `text({ enum })` or `$type<>()`. An untyped `json()`
+column is `unknown`, which only an unknown-output schema such as `z.unknown()`
+matches; give the column a `$type<>()` to validate its contents. `any` on
+either side fails.
 
 A codec stores its output, so reads go back through `z.encode`:
 
@@ -257,6 +262,10 @@ Payment.create.parse({ amount: 12.5, note: null }); // { amount: '12.50', note: 
 z.encode(Payment.read, row); // { id: '3f975ea5-df7b-4eb0-8585-ef6bf73de57d', amount: 12.5, note: null }
 Payment.read.safeParse(row).success; // false
 ```
+
+Binding proves that output types agree, not that encoding succeeds or
+round-trips: a one-way `.transform()` binds when its output matches its column,
+but `z.encode` on the read view then throws.
 
 Hoisted tables use `satisfies FieldsFor<typeof PaymentCore, PaymentRow>`.
 Insert completeness is not checked. Row types are erased at runtime, so

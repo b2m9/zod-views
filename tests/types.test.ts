@@ -292,6 +292,38 @@ test("a bound table without row-only columns needs no unmapped entries", () => {
   expectTypeOf<typeof Bound>().toEqualTypeOf<typeof Payment>();
 });
 
+test("finite template keys, optional columns, and readonly columns bind", () => {
+  const Audited = defineViews(
+    PaymentCore,
+    {
+      ...paymentRoles,
+      railReference: "unmapped",
+      audit_created: "unmapped",
+      audit_updated: "unmapped",
+    },
+    storedAs<PaymentRow & Record<`audit_${"created" | "updated"}`, string>>(),
+  );
+  const ReadonlyBound = defineViews(
+    PaymentCore,
+    { ...paymentRoles, railReference: "unmapped" },
+    storedAs<Readonly<PaymentRow>>(),
+  );
+
+  const NoteCore = z.object({ note: z.string().optional() });
+  const ExactNoteCore = z.object({ note: z.string().exactOptional() });
+  const OptionalNote = defineViews(
+    NoteCore,
+    { note: "mutable" },
+    storedAs<{ note?: string | undefined }>(),
+  );
+  const ExactNote = defineViews(ExactNoteCore, { note: "mutable" }, storedAs<{ note?: string }>());
+
+  expectTypeOf<typeof Audited>().toEqualTypeOf<typeof Payment>();
+  expectTypeOf<typeof ReadonlyBound>().toEqualTypeOf<typeof Payment>();
+  expectTypeOf<typeof OptionalNote>().toEqualTypeOf(defineViews(NoteCore, { note: "mutable" }));
+  expectTypeOf<typeof ExactNote>().toEqualTypeOf(defineViews(ExactNoteCore, { note: "mutable" }));
+});
+
 export const rejectedBindings = () => {
   const roles = { ...paymentRoles, railReference: "unmapped" } as const;
 
@@ -312,6 +344,19 @@ export const rejectedBindings = () => {
 
   // @ts-expect-error a number index signature has no finite key set.
   defineViews(PaymentCore, roles, storedAs<PaymentRow & { [index: number]: string }>());
+
+  // @ts-expect-error a template pattern index signature has no finite key set.
+  defineViews(PaymentCore, roles, storedAs<PaymentRow & { [K in `audit_${string}`]: string }>());
+
+  // @ts-expect-error a numeric-string pattern index signature has no finite key set.
+  defineViews(PaymentCore, roles, storedAs<PaymentRow & Record<`${number}`, string>>());
+
+  defineViews(
+    PaymentCore,
+    // @ts-expect-error each key of a finite template union is a column to classify.
+    { ...roles, audit_created: "unmapped" },
+    storedAs<PaymentRow & Record<`audit_${"created" | "updated"}`, string>>(),
+  );
 
   // @ts-expect-error symbol keys cannot be table entries.
   defineViews(PaymentCore, roles, storedAs<PaymentRow & { [Symbol.iterator]: string }>());
@@ -360,6 +405,20 @@ export const rejectedBindings = () => {
     // @ts-expect-error an exact optional output may omit a key that every row has.
     roles,
     storedAs<PaymentRow>(),
+  );
+
+  defineViews(
+    z.object({ label: z.string().exactOptional() }),
+    // @ts-expect-error an exact optional output may omit a required column.
+    { label: "mutable" },
+    storedAs<{ label: string }>(),
+  );
+
+  defineViews(
+    z.object({ label: z.string().optional() }),
+    // @ts-expect-error an optional output may omit a required column that admits undefined.
+    { label: "mutable" },
+    storedAs<{ label: string | undefined }>(),
   );
 
   // @ts-expect-error a non-null output disagrees with a nullable column.

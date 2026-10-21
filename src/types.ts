@@ -24,6 +24,11 @@ type IsUnion<Value, Whole = Value> = Value extends Whole
     : true
   : never;
 
+/** An empty object satisfies a record only when its key is an index signature. */
+type IndexKeys<Row> = {
+  [K in keyof Row]-?: {} extends Record<K, unknown> ? K : never;
+}[keyof Row];
+
 /** Only a finite set of string keys can be classified exhaustively. */
 type InvalidRow<Row> =
   IsAny<Row> extends true
@@ -32,11 +37,9 @@ type InvalidRow<Row> =
       ? true
       : true extends IsUnion<Row>
         ? true
-        : string extends keyof Row
-          ? true
-          : [Exclude<keyof Row, string>] extends [never]
-            ? false
-            : true;
+        : [IndexKeys<Row> | Exclude<keyof Row, string>] extends [never]
+          ? false
+          : true;
 
 /**
  * Adding a core field stays a compile error until its boundary role is explicit.

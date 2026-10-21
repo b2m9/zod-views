@@ -1,5 +1,9 @@
 # @b2m9/zod-views
 
+<p align="center">
+  <img src="logo.png" alt="zod-views logo" width="200">
+</p>
+
 Define an entity once as a Zod object, give every field a role, and get the
 three schemas an API needs: a strict `create` input, a strict `update` input
 that is safe for PATCH, and a `read` schema that strips hidden fields.

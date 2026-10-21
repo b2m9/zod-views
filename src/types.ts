@@ -49,9 +49,9 @@ export type ExactRoles<Core extends z.ZodObject<z.ZodRawShape>, Fields extends F
 type Shielded<Field extends z.ZodRawShape[string]> = z.ZodOptional<z.ZodNonOptional<Field>>;
 
 type CreateShape<Core extends z.ZodObject<z.ZodRawShape>, Fields extends FieldsFor<Core>> = {
-  [K in keyof Core["shape"] as WritabilityOf<Fields[K]> extends "server"
-    ? never
-    : K]: Core["shape"][K];
+  [
+    K in keyof Core["shape"] as WritabilityOf<Fields[K]> extends "server" ? never : K
+  ]: Core["shape"][K];
 };
 
 type UpdateShape<Core extends z.ZodObject<z.ZodRawShape>, Fields extends FieldsFor<Core>> = {
@@ -61,9 +61,9 @@ type UpdateShape<Core extends z.ZodObject<z.ZodRawShape>, Fields extends FieldsF
 };
 
 type ReadShape<Core extends z.ZodObject<z.ZodRawShape>, Fields extends FieldsFor<Core>> = {
-  [K in keyof Core["shape"] as Fields[K] extends `${Writability} hidden`
-    ? never
-    : K]: Core["shape"][K];
+  [
+    K in keyof Core["shape"] as Fields[K] extends `${Writability} hidden` ? never : K
+  ]: Core["shape"][K];
 };
 
 type StrictObject<Shape extends z.ZodRawShape> = ReturnType<typeof z.strictObject<Shape>>;

@@ -1,0 +1,33 @@
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # The vite and vitest catalog entries must move in lockstep with
+      # vite-plus; updating any of them alone breaks every vp command.
+      vite-plus:
+        patterns:
+          - vite-plus
+          - "@voidzero-dev/*"
+          - vite
+          - vitest
+      dev-dependencies:
+        dependency-type: development
+        patterns:
+          - "*"
+    ignore:
+      # The zod dev pin is the tested peer floor; CI tests the newest 4.x
+      # separately, so this pin only moves with the peer range.
+      - dependency-name: zod
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns:
+          - "*"

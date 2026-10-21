@@ -264,8 +264,8 @@ Payment.read.safeParse(row).success; // false
 ```
 
 Binding proves that output types agree, not that encoding succeeds or
-round-trips: a one-way `.transform()` binds when its output matches its column,
-but `z.encode` on the read view then throws.
+round-trips: a one-way `.transform()` on a visible field binds when its output
+matches its column, but `z.encode` on the read view then throws.
 
 Hoisted tables use `satisfies FieldsFor<typeof PaymentCore, PaymentRow>`.
 Insert completeness is not checked. Row types are erased at runtime, so

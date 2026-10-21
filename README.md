@@ -1,7 +1,7 @@
 # @b2m9/zod-views
 
 <p align="center">
-  <img src="logo.png" alt="zod-views logo" width="200">
+  <img src=".github/assets/logo.png" alt="zod-views logo" width="200">
 </p>
 
 Define an entity once as a Zod object, give every field a role, and get the

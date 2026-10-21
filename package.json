@@ -38,11 +38,11 @@
     "dev": "vp pack --watch",
     "test": "vp test run",
     "check": "vp check",
-    "check:exports": "vp pack && vp dlx publint@0.3.22 && vp dlx @arethetypeswrong/cli@0.18.5 --pack --profile esm-only",
+    "check:exports": "vp pack && vp dlx publint@0.3.25 && vp dlx @arethetypeswrong/cli@0.18.5 --pack --profile esm-only",
     "prepublishOnly": "vp run build"
   },
   "devDependencies": {
-    "@types/node": "25.6.2",
+    "@types/node": "26.6.5",
     "@typescript/native-preview": "7.0.0-dev.20260509.2",
     "typescript": "6.0.3",
     "vite-plus": "catalog:",
@@ -54,5 +54,5 @@
   "engines": {
     "node": ">=22"
   },
-  "packageManager": "pnpm@11.7.0"
+  "packageManager": "pnpm@12.14.0"
 }

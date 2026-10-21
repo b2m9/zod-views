@@ -255,6 +255,54 @@ describe("update shield", () => {
       status: "live",
     });
   });
+
+  test("views extend and refine like any object", () => {
+    const Extended = Views.update.extend({ note: z.string() });
+    const NonEmpty = Views.update.refine((patch) =>
+      Object.values(patch).some((value) => value !== undefined),
+    );
+
+    expect(Extended.parse({ title: "kept", note: "added" })).toEqual({
+      title: "kept",
+      note: "added",
+    });
+    expect(NonEmpty.safeParse({}).success).toBe(false);
+    expect(NonEmpty.parse({ status: "live" })).toEqual({ status: "live" });
+  });
+
+  // The README's recipe for tooling that reads `default` as an applied value.
+  const withoutUpdateDefaults = (view: z.ZodObject) =>
+    z.toJSONSchema(view, {
+      override: ({ zodSchema, jsonSchema }) => {
+        if (zodSchema instanceof z.ZodOptional && zodSchema.unwrap() instanceof z.ZodNonOptional) {
+          delete jsonSchema.default;
+        }
+      },
+    });
+
+  test("the default override strips update defaults and keeps create defaults", () => {
+    const status = z.enum(["draft", "live"]).default("draft");
+    const DefaultViews = defineViews(z.object({ status }), { status: "mutable" });
+
+    expect(withoutUpdateDefaults(DefaultViews.update).properties?.status).toEqual({
+      type: "string",
+      enum: ["draft", "live"],
+    });
+    expect(withoutUpdateDefaults(DefaultViews.create).properties?.status).toHaveProperty(
+      "default",
+      "draft",
+    );
+  });
+
+  test("registered update fields render as refs whose definitions keep defaults", () => {
+    const tier = z.enum(["free", "pro"]).default("free").meta({ id: "ZodViewsTier" });
+    const TierViews = defineViews(z.object({ tier }), { tier: "mutable" });
+
+    const schema = withoutUpdateDefaults(TierViews.update);
+
+    expect(schema.properties?.tier).toEqual({ $ref: "#/$defs/ZodViewsTier" });
+    expect(schema.$defs?.ZodViewsTier).toHaveProperty("default", "free");
+  });
 });
 
 describe("fixed boundaries", () => {

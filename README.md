@@ -1,58 +1,136 @@
 # @b2m9/zod-views
 
-Derive strict `create` and `update` inputs and a stripping `read` schema from
-one Zod object and one exhaustive field-role table.
+Define an entity once as a Zod object, give every field a role, and get the
+three schemas an API needs: a strict `create` input, a strict `update` input
+that is safe for PATCH, and a `read` schema that strips hidden fields.
 
-The usual PATCH schema can silently reset stored data:
+## Why not plain Zod
+
+A hand-written PATCH schema silently resets stored data:
 
 ```ts
 import { z } from "zod";
-const status = z.enum(["draft", "live"]).default("draft");
-const TaskCore = z.object({ id: z.uuid(), title: z.string(), status });
-const update = TaskCore.omit({ id: true }).partial();
-update.parse({ title: "Q3 Report" }); // { title: "Q3 Report", status: "draft" }
+
+const UserCore = z.object({
+  id: z.uuid(),
+  email: z.email(),
+  passwordHash: z.string(),
+  name: z.string().min(1),
+  plan: z.enum(["free", "pro"]).default("free"),
+});
+
+const stored = {
+  id: "3f975ea5-df7b-4eb0-8585-ef6bf73de57d",
+  email: "ada@example.com",
+  passwordHash: "$argon2id$...",
+  name: "Ada",
+  plan: "pro",
+};
+const body = { name: "Ada Lovelace" };
+
+const HandPatch = UserCore.pick({ name: true, plan: true }).partial();
+HandPatch.parse(body); // { name: 'Ada Lovelace', plan: 'free' }
+({ ...stored, ...HandPatch.parse(body) }).plan; // free
 ```
 
-The client sent a title. It got back a status. Merge that parsed patch into an
-existing task and its omitted status becomes `draft`. Zod applies defaults
-inside optional object fields by design. That is useful for create input, but
-dangerous at a PATCH boundary.
+The client asked to rename a pro user. The merge also moved them to the free
+plan. Zod runs every field schema with `undefined` for a missing key, so
+`.default()` fires through `.partial()`, `.optional()`, `.exactOptional()`, and
+4.5's `.exactPartial()`. This is intended Zod behavior. It is correct for
+create input and wrong for a patch.
 
-`defineViews` gives every mutable update field an undefined-first shield:
+`defineViews` derives an update view in which an absent key never runs its
+field:
 
 ```ts
 import { defineViews } from "@b2m9/zod-views";
 
-const Task = defineViews(TaskCore, {
+const User = defineViews(UserCore, {
   id: "server",
-  title: "mutable",
-  status: "mutable",
+  email: "create-only",
+  passwordHash: "server hidden",
+  name: "mutable",
+  plan: "mutable",
 });
 
-Task.update.parse({ title: "Q3 Report" }); // { title: "Q3 Report" }
-Task.create.parse({ title: "New" }); // { title: "New", status: "draft" }
+User.update.parse(body); // { name: 'Ada Lovelace' }
+({ ...stored, ...User.update.parse(body) }).plan; // pro
 ```
 
-The table also prevents schema drift. Add a core field and TypeScript requires
-you to classify it before the build passes:
+The table is exhaustive. Add a field to `UserCore` months later and the same
+call stops compiling until someone decides whether clients may write the field
+and whether reads may return it:
 
 ```ts
-const ProjectCore = z.object({
-  id: z.uuid(),
-  name: z.string(),
-  internalNotes: z.string(),
+const UserCore = z.object({
+  // id, email, passwordHash, name, and plan as above
+  referralCode: z.string(),
 });
 
-defineViews(ProjectCore, {
+defineViews(UserCore, {
   id: "server",
+  email: "create-only",
+  passwordHash: "server hidden",
   name: "mutable",
-  // error: Property 'internalNotes' is missing
+  plan: "mutable",
+  // error TS2345: Property 'referralCode' is missing in type '{ id: "server"; ... }'
 });
 ```
 
-You can build the same schemas by hand. This package makes two safety decisions
-mandatory: every field is classified, and an omitted update field cannot run
-its default.
+JavaScript callers get the same check when the views are defined:
+`Field "referralCode" is missing from the table; classify every core field.`
+Stale and misspelled entries fail the same way.
+
+## What you get
+
+| Role          | `create` | `update`           | `read` |
+| ------------- | -------- | ------------------ | ------ |
+| `mutable`     | yes      | optional, shielded | yes    |
+| `create-only` | yes      | no                 | yes    |
+| `server`      | no       | no                 | yes    |
+
+Append ` hidden` to any role to remove the field from `read`. Visibility never
+changes writability.
+
+- `create` and `update` reject unknown keys. `read` strips hidden and unknown
+  keys and validates the rest, so invalid stored data throws.
+- `create` keeps each core field as written, including its default. `update`
+  never runs a field for an absent key.
+- `z.input` and `z.output` of each view equal the schema you would write by
+  hand, including transforms and defaults. A type test enforces this for every
+  release.
+- Each view is a plain, unrefined `ZodObject`. `.extend`, `.omit`, `.refine`,
+  `z.toJSONSchema`, and `@hono/zod-openapi` work on it as on any other object.
+
+```ts
+User.create.parse({ email: "ada@example.com", name: "Ada" });
+// { email: 'ada@example.com', name: 'Ada', plan: 'free' }
+
+User.create.safeParse(stored).error?.issues[0]?.code;
+// unrecognized_keys
+
+User.read.parse(stored);
+// { id: '3f975ea5-df7b-4eb0-8585-ef6bf73de57d', email: 'ada@example.com', name: 'Ada', plan: 'pro' }
+
+type UserUpdate = z.infer<typeof User.update>;
+// { name?: string | undefined; plan?: "free" | "pro" | undefined }
+```
+
+Because write views are strict, echoing a fetched entity into one fails. Send
+only writable fields.
+
+## Is it for you
+
+Use it when one entity is created, patched, and read through an API and its
+fields form a plain Zod object. Use plain Zod for unions, commands, events,
+search parameters, and one-off request bodies.
+
+You can write the three views by hand; the type tests compare each view against
+exactly that. This package makes the classification exhaustive and the patch
+shield impossible to forget. drizzle-zod derives insert, update, and select
+schemas from Drizzle tables, and Prisma generators derive them from a Prisma
+schema. zod-views starts from any Zod object, such as an API contract that
+differs from the table, and assigns each field an API role.
 
 ## Install
 
@@ -60,153 +138,139 @@ its default.
 pnpm add @b2m9/zod-views "zod@^4.4.3"
 ```
 
-Supported environment: ESM, Node 22+, and `zod@^4.4.3`. Zod is the only peer
-dependency.
+ESM only, Node 22+. Zod is the only peer dependency, and there are no runtime
+dependencies. CI tests Zod 4.4.3 and the newest 4.x.
 
-## Usage
+## Update semantics
+
+Each mutable field becomes `z.optional(z.nonoptional(field))`.
 
 ```ts
-import { defineViews } from "@b2m9/zod-views";
-import { z } from "zod";
+User.update.parse({}); // {}
+User.update.parse({ plan: undefined }); // { plan: undefined }
 
-const UserCore = z.object({
-  id: z.uuid(),
-  orgId: z.uuid(),
-  email: z.email(),
-  password: z.string(),
-  displayName: z.string(),
-  roleId: z.uuid(),
-});
-
-const User = defineViews(UserCore, {
-  id: "server",
-  orgId: "server hidden",
-  email: "create-only",
-  password: "create-only hidden",
-  displayName: "mutable",
-  roleId: "mutable",
-});
-
-type UserUpdate = z.infer<typeof User.update>;
-// { displayName?: string | undefined; roleId?: string | undefined }
+const issues = (input: unknown) =>
+  User.update.safeParse(input).error?.issues.map(({ code, path }) => ({ code, path }));
+issues({ name: "" }); // [ { code: 'too_small', path: [ 'name' ] } ]
+issues({ plan: "gold" }); // [ { code: 'invalid_value', path: [ 'plan' ] } ]
+issues({ name: 42 }); // [ { code: 'invalid_type', path: [ 'name' ] } ]
 ```
 
-Each role combines writability with an optional visibility modifier:
-
-| Role          | Create | Update | Read |
-| ------------- | ------ | ------ | ---- |
-| `mutable`     | yes    | yes    | yes  |
-| `create-only` | yes    | no     | yes  |
-| `server`      | no     | no     | yes  |
-
-Append ` hidden` to any role to remove the field from `read`. Visibility never
-changes writability.
-
-## API
-
-The public API is `defineViews` and the `FieldsFor` type. The function accepts a
-plain core object and its exhaustive table. It returns three ordinary,
-unrefined Zod objects.
-
-For a table declared separately, use the package's only exported type:
+- An absent key stays absent. An empty patch is valid.
+- A provided value validates through the original field, which reports its own
+  issue. Message wording is not promised.
+- Explicit `undefined` skips the field and stays an own key. JSON bodies cannot
+  carry it, but in-process callers can, and a spread merge then clobbers the
+  stored value. Drop those keys before merging:
 
 ```ts
-import { defineViews, type FieldsFor } from "@b2m9/zod-views";
+const patch = User.update.parse({ plan: undefined });
+({ ...stored, ...patch }).plan; // undefined
 
-const fields = {
-  id: "server",
-  title: "mutable",
-  status: "mutable",
-} satisfies FieldsFor<typeof TaskCore>;
-const Task = defineViews(TaskCore, fields);
+const defined = Object.fromEntries(
+  Object.entries(patch).filter(([, value]) => value !== undefined),
+);
+({ ...stored, ...defined }).plan; // pro
 ```
 
-Prefer `satisfies FieldsFor<typeof TaskCore>` for a hoisted table. An annotation
-such as `: FieldsFor<typeof TaskCore>` widens every value to the full role
-union. `defineViews` rejects that form because one widened role cannot determine
-one exact view type. `as const` also preserves literal roles, but does not
-validate the table until the call.
+## Composition
 
-## Semantics
-
-| View     | Fields                         | Boundary            |
-| -------- | ------------------------------ | ------------------- |
-| `create` | mutable and create-only        | strict              |
-| `update` | mutable, shielded and optional | strict              |
-| `read`   | every non-hidden field         | strips unknown keys |
-
-The update shield is `z.optional(z.nonoptional(field))`. An absent JSON property
-never reaches the original field schema, so defaults, prefaults, transforms, and
-pipes cannot inject a value. A provided non-`undefined` value still validates
-through the original schema. A provided value that the field transforms to
-`undefined` fails with `invalid_type`.
-
-The views add nothing that JSON Schema cannot represent. `z.toJSONSchema`
-converts a view whenever it converts the core with the same options, such as
-`io: "input"` for transforms. In `update`, each field renders as the field's own
-schema with its own annotations, including `default`, although `update` never
-applies one. Drop that annotation with an override if your tooling reads it. A
-field registered with an `id` renders as a shared `$ref`, and its definition
-keeps the `default` that `create` and `read` document:
+Policy beyond the roles belongs in ordinary Zod on the view that owns it:
 
 ```ts
-z.toJSONSchema(Task.update, {
+const SignupInput = User.create.extend({ password: z.string().min(12) });
+const PublicUser = User.read.omit({ email: true });
+const NonEmptyUpdate = User.update.refine((p) => Object.values(p).some((v) => v !== undefined));
+
+PublicUser.parse(stored); // { id: '3f975ea5-df7b-4eb0-8585-ef6bf73de57d', name: 'Ada', plan: 'pro' }
+NonEmptyUpdate.safeParse({}).success; // false
+```
+
+## JSON Schema and OpenAPI
+
+Each update field renders as the core field's own schema, without `required`:
+
+```ts
+z.toJSONSchema(User.update);
+// {"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"name":{"type":"string","minLength":1},"plan":{"default":"free","type":"string","enum":["free","pro"]}},"additionalProperties":false}
+```
+
+A view converts whenever the core converts with the same options, such as
+`io: "input"` for transforms. The `default` annotation stays, although `update`
+never applies it. Drop it with an override if your tooling reads it:
+
+```ts
+z.toJSONSchema(User.update, {
   override: ({ zodSchema, jsonSchema }) => {
     if (zodSchema instanceof z.ZodOptional && zodSchema.unwrap() instanceof z.ZodNonOptional) {
       delete jsonSchema.default;
     }
   },
-});
+}).properties;
+// {"name":{"type":"string","minLength":1},"plan":{"type":"string","enum":["free","pro"]}}
 ```
 
-Create retains the original field schemas, including defaults. Read validates
-visible fields while stripping hidden and unknown keys.
-
-## Everything else is your own Zod
-
-The views support normal Zod composition:
+Views also work as route schemas in `@hono/zod-openapi`:
 
 ```ts
-const RoleSchema = z.object({ id: z.uuid(), name: z.string() });
-const UserExpanded = User.read.omit({ roleId: true }).extend({ role: RoleSchema });
-const SignupInput = User.create.extend({ password: z.string().min(12) });
-const NonEmpty = User.update.refine((patch) =>
-  Object.values(patch).some((value) => value !== undefined),
-);
+import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+
+const updateMe = createRoute({
+  method: "patch",
+  path: "/me",
+  request: { body: { content: { "application/json": { schema: User.update } } } },
+  responses: {
+    200: { description: "Updated user", content: { "application/json": { schema: User.read } } },
+  },
+});
+
+const app = new OpenAPIHono();
+app.openapi(updateMe, (c) => c.json(User.read.parse({ ...stored, ...c.req.valid("json") }), 200));
+// PATCH /me {"name":"Ada Lovelace"} → { id: '3f975ea5-df7b-4eb0-8585-ef6bf73de57d', email: 'ada@example.com', name: 'Ada Lovelace', plan: 'pro' }
+// PATCH /me {"plan":"gold"} → 400
 ```
 
-## Use plain Zod instead
+## Hoisted tables
 
-Use plain Zod when the thing is not one entity exposed three ways. Unions,
-commands, events, search parameters, and one-off request bodies do not need an
-entity view table.
+Check a separately declared table with `satisfies` and the exported
+`FieldsFor` type:
 
-## Guardrails
+```ts
+import { defineViews, type FieldsFor } from "@b2m9/zod-views";
 
-Create and update inputs are strict. Unknown keys are rejected so typos surface.
-This also means echoing a fetched entity into a write view fails by design.
-Send only writable fields.
+const userFields = {
+  id: "server",
+  email: "create-only",
+  passwordHash: "server hidden",
+  name: "mutable",
+  plan: "mutable",
+} satisfies FieldsFor<typeof UserCore>;
+const User = defineViews(UserCore, userFields);
+```
 
-Empty updates are valid. Use the `NonEmpty` refinement above if your API rejects
-them.
+`defineViews` rejects an annotation such as `: FieldsFor<typeof UserCore>`,
+which widens every role to the full union. `as const` keeps literal roles but
+checks the table only at the call.
 
-Explicit `undefined` short-circuits the field schema and remains present as
-`{ field: undefined }`. For a defaulted field this differs from `.partial()`,
-which materializes the default. JSON request bodies cannot contain `undefined`.
-If your merge distinguishes absence from `undefined`, drop those keys before
-merging.
+## Limits
 
-Read validates as well as strips. A visible field with invalid stored data
-throws instead of returning a sanitized partial row.
-
-A wrong update value reports the field's own issue, such as `invalid_type` or
-`too_small`. Message wording is not promised.
-
-The core must be a plain object without refinements or pipes. Refine the
-derived view that owns the policy instead.
-
-Classify every field. The repetition is the audit; there is no opt-out. Missing,
-stale, and invalid entries also throw at definition time for JavaScript callers.
+- Roles apply to top-level fields only. A provided nested object is parsed and
+  replaced as a whole, so its inner defaults apply. For a mutable
+  `settings: z.object({ theme: z.string(), locale: z.string().default("en") })`,
+  the patch `{ settings: { theme: "dark" } }` parses to
+  `{ settings: { theme: 'dark', locale: 'en' } }`.
+- An `.optional()` core field cannot be cleared through `update`; `null` fails
+  with `invalid_type` unless the core field is nullable.
+- There is no update-only role, such as a version token, and no per-audience
+  read view. Use `.extend` and `.omit` on the views.
+- The `default` annotation stays in the update view's JSON Schema and OpenAPI
+  output. The override above removes it for `z.toJSONSchema`; other generators
+  need their own hook. A field registered with an `id` renders as a shared
+  `$ref` whose definition keeps its `default`.
+- A transform that returns `undefined` for a provided value fails with
+  `invalid_type` in `update`.
+- The core must be a plain object without refinements or pipes. Refine the
+  derived view that owns the policy instead.
 
 ## License
 

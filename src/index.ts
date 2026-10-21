@@ -125,7 +125,11 @@ export function defineViews(
 
   for (const key of Object.keys(fields)) {
     if (!Object.hasOwn(shape, key) && !(bound && fields[key] === "unmapped")) {
-      throw new Error(`Field "${key}" is not in the core schema; remove it from the table.`);
+      throw new Error(
+        bound
+          ? `Field "${key}" is not in the core schema; remove it or classify the row column as "unmapped".`
+          : `Field "${key}" is not in the core schema; remove it from the table.`,
+      );
     }
   }
 

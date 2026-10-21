@@ -27,9 +27,10 @@ that pass.
   only with a bound row, only for columns without a core field, and has no
   ` hidden` variant.
 - **Bound rows compare outputs.** Each core field's `z.output` must equal its
-  column in type and optionality, and `any` proves nothing on either side. A
-  bound result is the unbound result for the same core roles. Do not add an
-  insert check or a second row type.
+  column in type and optionality, and a top-level `any` on either side never
+  matches; nested `any` is not detected, which the README states. A bound
+  result is the unbound result for the same core roles. Do not add an insert
+  check or a second row type.
 - **Row keys are erased at runtime.** `storedAs()` returns one frozen,
   data-free marker; the runtime only accepts `unmapped` extras when it is
   passed. Do not fake row exhaustiveness for JavaScript callers.

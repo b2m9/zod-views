@@ -245,8 +245,10 @@ stores a value. A matching optional Row property is accepted, and telling
 An enum fails against a `text` column until the column is narrowed, for
 example with Drizzle's `text({ enum })` or `$type<>()`. An untyped `json()`
 column is `unknown`, which only an unknown-output schema such as `z.unknown()`
-matches; give the column a `$type<>()` to validate its contents. `any` on
-either side fails.
+matches; `$type<>()` narrows the inferred column type so a schema for its
+contents can bind, while the Zod schema does the runtime validation. `any` as a
+column or output type fails; `any` nested inside a column type, such as
+`Record<string, any>`, is not detected.
 
 A codec stores its output, so reads go back through `z.encode`:
 
@@ -269,8 +271,9 @@ matches its column, but `z.encode` on the read view then throws.
 
 Hoisted tables use `satisfies FieldsFor<typeof PaymentCore, PaymentRow>`.
 Insert completeness is not checked. Row types are erased at runtime, so
-JavaScript callers get the core checks and `unmapped` entries, but no check
-that every column is classified.
+JavaScript callers get the core checks and the rejection of `unmapped` on core
+fields, but any `unmapped` key is accepted, even one that names no column, and
+nothing checks that every column is classified.
 
 ## JSON Schema and OpenAPI
 

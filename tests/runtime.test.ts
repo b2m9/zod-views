@@ -458,14 +458,16 @@ describe("row binding", () => {
 
   test("extra entries without a bound row stay stale", () => {
     expect(() => defineViewsFromJs(PaymentCore, { ...roles, railReference: "unmapped" })).toThrow(
-      'Field "railReference" is not in the core schema',
+      'Field "railReference" is not in the core schema; remove it from the table.',
     );
   });
 
   test("a bound row accepts only unmapped on extra entries", () => {
     expect(() =>
       defineViewsFromJs(PaymentCore, { ...roles, railReference: "server" }, storedAs()),
-    ).toThrow('Field "railReference" is not in the core schema');
+    ).toThrow(
+      'Field "railReference" is not in the core schema; remove it or classify the row column as "unmapped".',
+    );
   });
 
   test("a bound row still requires every core field", () => {
@@ -481,7 +483,7 @@ describe("row binding", () => {
   });
 
   test.each([{}, Object.freeze(Object.create(null)), null, "row", () => {}])(
-    "a third argument other than the marker throws",
+    "a third argument other than the marker throws (case %#)",
     (marker) => {
       expect(() => defineViewsFromJs(PaymentCore, roles, marker)).toThrow(
         "The third argument must be storedAs<Row>()",

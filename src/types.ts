@@ -66,21 +66,22 @@ type StaleKeys<Core extends z.ZodObject<z.ZodRawShape>, Fields extends CoreField
   keyof Core["shape"]
 >;
 
+/** The key sits in the property name, which every compiler surface prints in full. */
+type Labelled<Keys, Message extends string> = {
+  [K in Keys as `zod-views: \`${K & string}\` ${Message}`]: K;
+};
+
 /** Structural constraints otherwise admit stale keys and ambiguous role unions. */
 export type ExactRoles<Core extends z.ZodObject<z.ZodRawShape>, Fields extends CoreFields<Core>> = [
   StaleKeys<Core, Fields>,
 ] extends [never]
   ? [WidenedKeys<Core, Fields>] extends [never]
     ? unknown
-    : {
-        "zod-views: use one literal role per field; declare hoisted tables with `satisfies FieldsFor<typeof Core>` or `as const`": WidenedKeys<
-          Core,
-          Fields
-        >;
-      }
-  : {
-      "zod-views: remove table entries that name no core field": StaleKeys<Core, Fields>;
-    };
+    : Labelled<
+        WidenedKeys<Core, Fields>,
+        "needs one literal role; declare hoisted tables with `satisfies FieldsFor<typeof Core>` or `as const`"
+      >
+  : Labelled<StaleKeys<Core, Fields>, "names no core field; remove it from the table">;
 
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 
@@ -110,30 +111,22 @@ export type ExactBoundRoles<
         ? [Exclude<keyof Core["shape"], keyof Row>] extends [never]
           ? [MismatchedColumns<Core, Row>] extends [never]
             ? unknown
-            : {
-                "zod-views: core field outputs differ from row columns in type or optionality": MismatchedColumns<
-                  Core,
-                  Row
-                >;
-              }
-          : {
-              "zod-views: core fields that are not row columns": Exclude<
-                keyof Core["shape"],
-                keyof Row
-              >;
-            }
-        : {
-            "zod-views: use one literal role per field; declare hoisted tables with `satisfies FieldsFor<typeof Core, Row>` or `as const`": WidenedKeys<
-              Core,
-              Fields
-            >;
-          }
-      : {
-          "zod-views: remove table entries that name no core field or row column": Exclude<
-            keyof Fields,
-            keyof Core["shape"] | keyof Row
-          >;
-        };
+            : Labelled<
+                MismatchedColumns<Core, Row>,
+                "output differs from its row column in type or optionality"
+              >
+          : Labelled<
+              Exclude<keyof Core["shape"], keyof Row>,
+              "is a core field but not a row column"
+            >
+        : Labelled<
+            WidenedKeys<Core, Fields>,
+            "needs one literal role; declare hoisted tables with `satisfies FieldsFor<typeof Core, Row>` or `as const`"
+          >
+      : Labelled<
+          Exclude<keyof Fields, keyof Core["shape"] | keyof Row>,
+          "names no core field or row column; remove it from the table"
+        >;
 
 type Shielded<Field extends z.ZodRawShape[string]> = z.ZodOptional<z.ZodNonOptional<Field>>;
 

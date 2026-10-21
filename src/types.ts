@@ -46,9 +46,7 @@ export type ExactRoles<Core extends z.ZodObject<z.ZodRawShape>, Fields extends F
       "zod-views: remove table entries that name no core field": StaleKeys<Core, Fields>;
     };
 
-type Shielded<Field extends z.ZodRawShape[string]> = z.ZodOptional<
-  z.ZodUnion<readonly [z.ZodOptional<z.ZodNever>, Field]>
->;
+type Shielded<Field extends z.ZodRawShape[string]> = z.ZodOptional<z.ZodNonOptional<Field>>;
 
 type CreateShape<Core extends z.ZodObject<z.ZodRawShape>, Fields extends FieldsFor<Core>> = {
   [K in keyof Core["shape"] as WritabilityOf<Fields[K]> extends "server"

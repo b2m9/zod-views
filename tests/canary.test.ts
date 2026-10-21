@@ -2,7 +2,7 @@ import { expect, test } from "vite-plus/test";
 import { z } from "zod";
 
 // Keeping package code out of canaries makes their failures evidence of Zod movement.
-test("undefined-first shielding prevents the guarded schema from executing", () => {
+test("optional nonoptional shielding prevents the guarded schema from executing", () => {
   let executions = 0;
   const guarded = z
     .string()
@@ -11,23 +11,31 @@ test("undefined-first shielding prevents the guarded schema from executing", () 
       executions += 1;
       throw new Error("field schema executed");
     });
-  const shield = z.union([z.never().optional(), guarded]).optional();
-  const update = z.strictObject({ guarded: shield });
+  const update = z.strictObject({ guarded: z.optional(z.nonoptional(guarded)) });
 
-  expect(shield.parse(undefined)).toBeUndefined();
   expect(update.parse({})).toEqual({});
+  expect(executions).toBe(0);
+
+  const parsed = update.parse({ guarded: undefined });
+  expect(Object.hasOwn(parsed, "guarded")).toBe(true);
   expect(executions).toBe(0);
 });
 
-test("an optional never accepts only undefined and renders as an empty-match schema", () => {
-  const absent = z.never().optional();
+test("nonoptional passes provided values through and rejects an undefined result", () => {
+  expect(z.nonoptional(z.string().default("injected")).parse("x")).toBe("x");
 
-  expect(absent.parse(undefined)).toBeUndefined();
-  // A defined value accepted here would skip the field schema in the shield.
-  for (const value of [null, false, 0, "", {}]) {
-    expect(absent.safeParse(value).success).toBe(false);
-  }
-  expect(z.toJSONSchema(absent)).toMatchObject({ not: {} });
+  const result = z.nonoptional(z.string().transform(() => undefined)).safeParse("x");
+  expect(result.success).toBe(false);
+  expect(result.error?.issues[0]?.code).toBe("invalid_type");
+});
+
+test("optional nonoptional renders as the plain field in JSON Schema", () => {
+  const shape = { k: z.optional(z.nonoptional(z.string().min(1))) };
+
+  expect(z.toJSONSchema(z.object(shape), { io: "input" }).properties?.k).toEqual({
+    type: "string",
+    minLength: 1,
+  });
 });
 
 test("strict and strip object constructors retain their boundary semantics", () => {

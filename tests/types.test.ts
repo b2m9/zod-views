@@ -23,8 +23,8 @@ const HandCreate = EntityCore.pick({
 });
 
 const HandUpdate = z.strictObject({
-  titleLength: z.union([z.undefined(), EntityCore.shape.titleLength]).optional(),
-  status: z.union([z.undefined(), EntityCore.shape.status]).optional(),
+  titleLength: z.optional(z.nonoptional(EntityCore.shape.titleLength)),
+  status: z.optional(z.nonoptional(EntityCore.shape.status)),
 });
 
 const HandRead = EntityCore.omit({ secret: true });
@@ -82,6 +82,50 @@ test("wrapper inference is identical to hand-written schemas", () => {
     id: string;
     titleLength: number;
     status: "draft" | "live";
+  }>();
+});
+
+const WrappedCore = z.object({
+  note: z.string().optional(),
+  archivedBy: z.string().nullable().default(null),
+  priority: z.number().prefault(0),
+  dueAt: z.codec(z.iso.datetime(), z.date(), {
+    decode: (value) => new Date(value),
+    encode: (date) => date.toISOString(),
+  }),
+});
+
+const Wrapped = defineViews(WrappedCore, {
+  note: "mutable",
+  archivedBy: "mutable",
+  priority: "mutable",
+  dueAt: "mutable",
+});
+
+const HandWrappedUpdate = z.strictObject({
+  note: z.optional(z.nonoptional(WrappedCore.shape.note)),
+  archivedBy: z.optional(z.nonoptional(WrappedCore.shape.archivedBy)),
+  priority: z.optional(z.nonoptional(WrappedCore.shape.priority)),
+  dueAt: z.optional(z.nonoptional(WrappedCore.shape.dueAt)),
+});
+
+test("shielded wrapper fields infer like the hand-written shield", () => {
+  expectTypeOf<z.input<typeof Wrapped.update>>().toEqualTypeOf<z.input<typeof HandWrappedUpdate>>();
+  expectTypeOf<z.output<typeof Wrapped.update>>().toEqualTypeOf<
+    z.output<typeof HandWrappedUpdate>
+  >();
+
+  expectTypeOf<z.input<typeof Wrapped.update>>().toEqualTypeOf<{
+    note?: string | undefined;
+    archivedBy?: string | null | undefined;
+    priority?: number | undefined;
+    dueAt?: string | undefined;
+  }>();
+  expectTypeOf<z.output<typeof Wrapped.update>>().toEqualTypeOf<{
+    note?: string | undefined;
+    archivedBy?: string | null | undefined;
+    priority?: number | undefined;
+    dueAt?: Date | undefined;
   }>();
 });
 

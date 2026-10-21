@@ -21,7 +21,7 @@ function captureError(operation: () => unknown): Error {
 }
 
 describe("stop-ship runtime gates", () => {
-  test("wrong-type updates retain the native union issue", () => {
+  test("wrong-type updates retain the field's direct issue", () => {
     const Core = z.object({ count: z.number().min(1) });
     const Views = defineViews(Core, { count: "mutable" });
 
@@ -30,7 +30,7 @@ describe("stop-ship runtime gates", () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.issues).toHaveLength(1);
-      expect(result.error.issues[0]?.code).toBe("invalid_union");
+      expect(result.error.issues[0]?.code).toBe("invalid_type");
       expect(result.error.issues[0]?.path).toEqual(["count"]);
     }
   });
@@ -204,10 +204,50 @@ describe("update shield", () => {
     expect(Views.update.parse({ title: "kept" })).toEqual({ title: "kept" });
   });
 
-  test("the update view converts to JSON Schema", () => {
-    expect(z.toJSONSchema(Views.update, { io: "input" }).properties?.title).toEqual({
-      anyOf: [{ not: {} }, { type: "string", minLength: 1 }],
-    });
+  test("provided values that transform to undefined are rejected", () => {
+    const Cleared = z.object({ cleared: z.string().transform(() => undefined) });
+    const ClearedViews = defineViews(Cleared, { cleared: "mutable" });
+
+    const result = ClearedViews.update.safeParse({ cleared: "value" });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues).toHaveLength(1);
+      expect(result.error.issues[0]?.code).toBe("invalid_type");
+      expect(result.error.issues[0]?.path).toEqual(["cleared"]);
+    }
+  });
+
+  const SchemaCore = z.object({
+    title: z.string().min(1).describe("Shown in task lists"),
+    status: z.enum(["draft", "live"]).default("draft"),
+    titleLength: z.string().transform((value) => value.length),
+  });
+
+  const SchemaViews = defineViews(SchemaCore, {
+    title: "mutable",
+    status: "mutable",
+    titleLength: "mutable",
+  });
+
+  test.each([
+    ["input", SchemaCore, SchemaViews.update],
+    // Output JSON Schema cannot represent transforms.
+    [
+      "output",
+      SchemaCore.omit({ titleLength: true }),
+      SchemaViews.update.omit({ titleLength: true }),
+    ],
+  ] as const)("update fields render as their core fields for io %s", (io, core, update) => {
+    const coreSchema = z.toJSONSchema(core, { io });
+    const updateSchema = z.toJSONSchema(update, { io });
+    const keys = Object.keys(core.shape);
+
+    expect(keys.length).toBeGreaterThan(0);
+    for (const key of keys) {
+      expect(updateSchema.properties?.[key]).toEqual(coreSchema.properties?.[key]);
+    }
+    expect(updateSchema.required).toBeUndefined();
   });
 
   test("composition remains ordinary Zod", () => {

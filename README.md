@@ -194,6 +194,27 @@ PublicUser.parse(stored); // { id: '3f975ea5-df7b-4eb0-8585-ef6bf73de57d', name:
 NonEmptyUpdate.safeParse({}).success; // false
 ```
 
+Nest one entity in another the same way: swap the field per view. The nested
+update is shielded like any other field, so an absent address stays untouched
+and a present one is a partial patch.
+
+```ts
+const Address = defineViews(AddressCore, {
+  street: "mutable",
+  country: "mutable",
+  geohash: "server hidden",
+});
+
+const CreateUnit = Unit.create.extend({ address: Address.create });
+const UpdateUnit = Unit.update.extend({ address: z.optional(z.nonoptional(Address.update)) });
+const ReadUnit = Unit.read.extend({ address: Address.read });
+
+UpdateUnit.parse({ address: { country: "AT" } }); // { address: { country: 'AT' } }
+```
+
+A nested patch needs a per-level merge when persisting; one spread no longer
+suffices.
+
 ## Binding to a stored row
 
 Pass `storedAs<Row>()` as a third argument to tie the table to a stored row
@@ -288,8 +309,10 @@ z.toJSONSchema(User.update);
 ```
 
 A view converts whenever the core converts with the same options, such as
-`io: "input"` for transforms. The `default` annotation stays, although `update`
-never applies it. Drop it with an override if your tooling reads it:
+`io: "input"` for transforms. A core with codecs needs `io: "input"` on every
+view, including `read`: the default output side documents the stored types and
+throws for `Date`. The `default` annotation stays, although `update` never
+applies it. Drop it with an override if your tooling reads it:
 
 ```ts
 z.toJSONSchema(User.update, {

@@ -500,3 +500,38 @@ describe("row binding", () => {
     expect(fields).toEqual(snapshot);
   });
 });
+
+test("families nest through extend with a shielded inner update", () => {
+  const AddressCore = z.object({
+    street: z.string(),
+    country: z.enum(["DE", "AT"]).default("DE"),
+    geohash: z.string(),
+  });
+  const Address = defineViews(AddressCore, {
+    street: "mutable",
+    country: "mutable",
+    geohash: "server hidden",
+  });
+  const UnitCore = z.object({ id: z.uuid(), name: z.string(), address: AddressCore });
+  const Unit = defineViews(UnitCore, { id: "server", name: "mutable", address: "mutable" });
+
+  const CreateUnit = Unit.create.extend({ address: Address.create });
+  const UpdateUnit = Unit.update.extend({ address: z.optional(z.nonoptional(Address.update)) });
+  const ReadUnit = Unit.read.extend({ address: Address.read });
+
+  expect(UpdateUnit.parse({ address: { country: "AT" } })).toEqual({ address: { country: "AT" } });
+  expect(UpdateUnit.parse({ name: "x" })).toEqual({ name: "x" });
+  expect(Object.hasOwn(UpdateUnit.parse({ name: "x" }), "address")).toBe(false);
+  expect(
+    ReadUnit.parse({
+      id: "3f975ea5-df7b-4eb0-8585-ef6bf73de57d",
+      name: "n",
+      address: { street: "s", country: "DE", geohash: "g" },
+    }).address,
+  ).toEqual({ street: "s", country: "DE" });
+  expect(
+    CreateUnit.safeParse({ name: "n", address: { street: "s", geohash: "g" } }).error?.issues.map(
+      (issue) => issue.code,
+    ),
+  ).toEqual(["unrecognized_keys"]);
+});

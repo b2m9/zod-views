@@ -199,11 +199,19 @@ update is shielded like any other field, so an absent address stays untouched
 and a present one is a partial patch.
 
 ```ts
+const AddressCore = z.object({
+  street: z.string(),
+  country: z.enum(["DE", "AT"]),
+  geohash: z.string(),
+});
 const Address = defineViews(AddressCore, {
   street: "mutable",
   country: "mutable",
   geohash: "server hidden",
 });
+
+const UnitCore = z.object({ id: z.uuid(), name: z.string(), address: AddressCore });
+const Unit = defineViews(UnitCore, { id: "server", name: "mutable", address: "mutable" });
 
 const CreateUnit = Unit.create.extend({ address: Address.create });
 const UpdateUnit = Unit.update.extend({ address: z.optional(z.nonoptional(Address.update)) });
@@ -309,10 +317,9 @@ z.toJSONSchema(User.update);
 ```
 
 A view converts whenever the core converts with the same options, such as
-`io: "input"` for transforms. A core with codecs needs `io: "input"` on every
-view, including `read`: the default output side documents the stored types and
-throws for `Date`. The `default` annotation stays, although `update` never
-applies it. Drop it with an override if your tooling reads it:
+`io: "input"` for transforms. A view that contains a codec needs `io: "input"`
+too: the default output side documents the stored types and throws for `Date`.
+The `default` annotation stays, although `update` never applies it. Drop it with an override if your tooling reads it:
 
 ```ts
 z.toJSONSchema(User.update, {

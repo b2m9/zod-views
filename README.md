@@ -214,7 +214,7 @@ type PaymentRow = {
 const PaymentCore = z.object({
   id: z.uuid(),
   amount: z.codec(z.number(), z.string(), {
-    decode: (wire) => wire.toFixed(2),
+    decode: (wire) => String(wire),
     encode: (stored) => Number(stored),
   }),
   note: z.string().nullable(),
@@ -239,8 +239,9 @@ compiling when:
 Outputs are compared because writes store them. The comparison needs
 `strictNullChecks`; without it, `z.string()` matches a `string | null` column.
 `.optional()` and `.exactOptional()` fields fail against required columns; use
-`.nullable()` for a nullable column or `.default()` when absent input still
-stores a value. A matching optional Row property is accepted, and telling
+`.nullable()` for a nullable column, `.default()` when absent input still
+stores a value, or `.nullable().default(null)` for a nullable column that
+create may omit. A matching optional Row property is accepted, and telling
 `p?: string` from `p?: string | undefined` needs `exactOptionalPropertyTypes`.
 An enum fails against a `text` column until the column is narrowed, for
 example with Drizzle's `text({ enum })` or `$type<>()`. An untyped `json()`
@@ -250,7 +251,9 @@ contents can bind, while the Zod schema does the runtime validation. `any` as a
 column or output type fails; `any` nested inside a column type, such as
 `Record<string, any>`, is not detected.
 
-A codec stores its output, so reads go back through `z.encode`:
+A codec stores its output, so reads go back through `z.encode`. The decimal
+codec above passes the number through unrounded; the database rounds to the
+column scale, and `toFixed` would round differently.
 
 ```ts
 const row = {
@@ -260,7 +263,7 @@ const row = {
   railReference: null,
 };
 
-Payment.create.parse({ amount: 12.5, note: null }); // { amount: '12.50', note: null }
+Payment.create.parse({ amount: 12.5, note: null }); // { amount: '12.5', note: null }
 z.encode(Payment.read, row); // { id: '3f975ea5-df7b-4eb0-8585-ef6bf73de57d', amount: 12.5, note: null }
 Payment.read.safeParse(row).success; // false
 ```

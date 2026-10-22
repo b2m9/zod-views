@@ -377,7 +377,7 @@ describe("row binding", () => {
   const PaymentCore = z.object({
     id: z.uuid(),
     amount: z.codec(z.number(), z.string(), {
-      decode: (wire) => wire.toFixed(2),
+      decode: (wire) => String(wire),
       encode: (stored) => Number(stored),
     }),
     note: z.string().nullable(),
@@ -422,14 +422,14 @@ describe("row binding", () => {
     expect(Bound.update.safeParse({ railReference: "x" }).success).toBe(false);
     expect(Bound.read.parse({ ...row, amount: 12.5 })).toEqual({
       id: row.id,
-      amount: "12.50",
+      amount: "12.5",
       note: null,
     });
   });
 
   test("codec cores write the stored form and read through z.encode", () => {
     expect(Bound.create.parse({ amount: 12.5, note: null })).toEqual({
-      amount: "12.50",
+      amount: "12.5",
       note: null,
     });
     expect(Bound.update.parse({ note: "paid" })).toEqual({ note: "paid" });

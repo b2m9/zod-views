@@ -92,9 +92,12 @@ Stale and misspelled entries fail the same way.
 | `mutable`     | yes      | optional, shielded | yes    |
 | `create-only` | yes      | no                 | yes    |
 | `server`      | no       | no                 | yes    |
+| `unmapped`    | no       | no                 | no     |
 
-Append ` hidden` to any role to remove the field from `read`. Visibility never
-changes writability.
+Append ` hidden` to `mutable`, `create-only`, or `server` to remove the field
+from `read`. Visibility never changes writability. `unmapped` exists only with
+a [bound row](#binding-to-a-stored-row) and classifies a column without a core
+field.
 
 - `create` and `update` reject unknown keys. `read` strips hidden and unknown
   keys and validates the rest, so invalid stored data throws.
@@ -134,7 +137,8 @@ exactly that. This package makes the classification exhaustive and the patch
 shield impossible to forget. drizzle-zod derives insert, update, and select
 schemas from Drizzle tables, and Prisma generators derive them from a Prisma
 schema. zod-views starts from any Zod object, such as an API contract that
-differs from the table, and assigns each field an API role.
+differs from the table, assigns each field an API role, and can check that
+object against the table's row type.
 
 ## Install
 
@@ -190,6 +194,119 @@ PublicUser.parse(stored); // { id: '3f975ea5-df7b-4eb0-8585-ef6bf73de57d', name:
 NonEmptyUpdate.safeParse({}).success; // false
 ```
 
+Nest one entity in another the same way: swap the field per view. The nested
+update is shielded like any other field, so an absent address stays untouched
+and a present one is a partial patch.
+
+```ts
+const AddressCore = z.object({
+  street: z.string(),
+  country: z.enum(["DE", "AT"]),
+  geohash: z.string(),
+});
+const Address = defineViews(AddressCore, {
+  street: "mutable",
+  country: "mutable",
+  geohash: "server hidden",
+});
+
+const UnitCore = z.object({ id: z.uuid(), name: z.string(), address: AddressCore });
+const Unit = defineViews(UnitCore, { id: "server", name: "mutable", address: "mutable" });
+
+const CreateUnit = Unit.create.extend({ address: Address.create });
+const UpdateUnit = Unit.update.extend({ address: z.optional(z.nonoptional(Address.update)) });
+const ReadUnit = Unit.read.extend({ address: Address.read });
+
+UpdateUnit.parse({ address: { country: "AT" } }); // { address: { country: 'AT' } }
+```
+
+A nested patch needs a per-level merge when persisting; one spread no longer
+suffices.
+
+## Binding to a stored row
+
+Pass `storedAs<Row>()` as a third argument to tie the table to a stored row
+type, such as Drizzle's `typeof payment.$inferSelect`. Row must be a finite,
+non-union object type with string keys and no index signatures, whether an ORM
+infers it or you write it; zod-views never reads a table definition.
+
+```ts
+import { defineViews, storedAs } from "@b2m9/zod-views";
+
+type PaymentRow = {
+  id: string;
+  amount: string; // a numeric column
+  note: string | null;
+  railReference: string | null;
+};
+
+const PaymentCore = z.object({
+  id: z.uuid(),
+  amount: z.codec(z.number(), z.string(), {
+    decode: (wire) => String(wire),
+    encode: (stored) => Number(stored),
+  }),
+  note: z.string().nullable(),
+});
+
+const Payment = defineViews(
+  PaymentCore,
+  { id: "server", amount: "create-only", note: "mutable", railReference: "unmapped" },
+  storedAs<PaymentRow>(),
+);
+```
+
+The views are the ones the table derives without a row. The call stops
+compiling when:
+
+1. Row is `any`, `never`, a union, or has an index signature.
+2. A core field is not a row column.
+3. A row column has no entry. `unmapped` keeps it out of every view.
+4. An entry names neither a core field nor a row column.
+5. A core field's output differs from its column in type or optionality.
+
+Outputs are compared because writes store them. The comparison needs
+`strictNullChecks`; without it, `z.string()` matches a `string | null` column.
+`.optional()` and `.exactOptional()` fields fail against required columns; use
+`.nullable()` for a nullable column, `.default()` when absent input still
+stores a value, or `.nullable().default(null)` for a nullable column that
+create may omit. A matching optional Row property is accepted, and telling
+`p?: string` from `p?: string | undefined` needs `exactOptionalPropertyTypes`.
+An enum fails against a `text` column until the column is narrowed, for
+example with Drizzle's `text({ enum })` or `$type<>()`. An untyped `json()`
+column is `unknown`, which only an unknown-output schema such as `z.unknown()`
+matches; `$type<>()` narrows the inferred column type so a schema for its
+contents can bind, while the Zod schema does the runtime validation. `any` as a
+column or output type fails; `any` nested inside a column type, such as
+`Record<string, any>`, is not detected.
+
+A codec stores its output, so reads go back through `z.encode`. The decimal
+codec above passes the number through unrounded; the database rounds to the
+column scale, and `toFixed` would round differently.
+
+```ts
+const row = {
+  id: "3f975ea5-df7b-4eb0-8585-ef6bf73de57d",
+  amount: "12.50",
+  note: null,
+  railReference: null,
+};
+
+Payment.create.parse({ amount: 12.5, note: null }); // { amount: '12.5', note: null }
+z.encode(Payment.read, row); // { id: '3f975ea5-df7b-4eb0-8585-ef6bf73de57d', amount: 12.5, note: null }
+Payment.read.safeParse(row).success; // false
+```
+
+Binding proves that output types agree, not that encoding succeeds or
+round-trips: a one-way `.transform()` on a visible field binds when its output
+matches its column, but `z.encode` on the read view then throws.
+
+Hoisted tables use `satisfies FieldsFor<typeof PaymentCore, PaymentRow>`.
+Insert completeness is not checked. Row types are erased at runtime, so
+JavaScript callers get the core checks and the rejection of `unmapped` on core
+fields, but any `unmapped` key is accepted, even one that names no column, and
+nothing checks that every column is classified.
+
 ## JSON Schema and OpenAPI
 
 Each update field renders as the core field's own schema, without `required`:
@@ -200,8 +317,9 @@ z.toJSONSchema(User.update);
 ```
 
 A view converts whenever the core converts with the same options, such as
-`io: "input"` for transforms. The `default` annotation stays, although `update`
-never applies it. Drop it with an override if your tooling reads it:
+`io: "input"` for transforms. A view that contains a codec needs `io: "input"`
+too: the default output side documents the stored types and throws for `Date`.
+The `default` annotation stays, although `update` never applies it. Drop it with an override if your tooling reads it:
 
 ```ts
 z.toJSONSchema(User.update, {

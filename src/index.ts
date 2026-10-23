@@ -2,7 +2,7 @@
 // imports keep zod-views from pulling all of Zod into consumer bundles.
 import { nonoptional, object, optional, strictObject, ZodObject, type ZodRawShape } from "zod";
 
-import type { ExactRoles, FieldsFor, ViewsFor } from "./types.ts";
+import type { ExactBoundRoles, ExactRoles, FieldsFor, ViewsFor } from "./types.ts";
 
 const roles = new Set([
   "mutable",
@@ -12,6 +12,19 @@ const roles = new Set([
   "server",
   "server hidden",
 ]);
+
+declare const stored: unique symbol;
+/** Carries a row type into inference; it holds no data. */
+interface RowBinding<Row extends object> {
+  readonly [stored]: (row: Row) => Row;
+}
+
+const binding = Object.freeze(Object.create(null) as object);
+
+/** Binds a table to a stored row type, such as Drizzle's `typeof table.$inferSelect`. */
+export function storedAs<Row extends object>(): RowBinding<Row> {
+  return binding as RowBinding<Row>;
+}
 
 function assertPlainObject(core: unknown): asserts core is ZodObject {
   if (!(core instanceof ZodObject)) {
@@ -49,7 +62,28 @@ function describeRole(role: unknown): string {
 export function defineViews<
   Core extends ZodObject<ZodRawShape>,
   const Fields extends FieldsFor<Core>,
->(core: Core, fields: Fields & ExactRoles<Core, Fields>): ViewsFor<Core, Fields> {
+>(core: Core, fields: Fields & ExactRoles<Core, Fields>): ViewsFor<Core, Fields>;
+/** Derives the same views and proves the core's output is the stored row, column by column. */
+export function defineViews<
+  Row extends object,
+  Core extends ZodObject<ZodRawShape>,
+  const Fields extends FieldsFor<Core, Row>,
+>(
+  core: Core,
+  // Row is inferred from the marker alone, never from its own diagnostic.
+  fields: Fields & NoInfer<ExactBoundRoles<Core, Fields, Row>>,
+  row: RowBinding<Row>,
+): ViewsFor<Core, Fields>;
+export function defineViews(
+  core: unknown,
+  fields: Readonly<Record<string, unknown>>,
+  row?: object,
+): unknown {
+  // Row keys are erased at runtime, so a binding only licenses `unmapped` entries.
+  const bound = row !== undefined;
+  if (bound && row !== binding) {
+    throw new Error("The third argument must be storedAs<Row>(); defineViews takes no options.");
+  }
   assertPlainObject(core);
   const shape = core.shape;
 
@@ -64,6 +98,11 @@ export function defineViews<
     }
 
     const role = fields[key];
+    if (bound && role === "unmapped") {
+      throw new Error(
+        `Field "${key}" is a core field; "unmapped" is only for row columns without a core field.`,
+      );
+    }
     if (typeof role !== "string" || !roles.has(role)) {
       throw new Error(
         `Field "${key}" has invalid role ${describeRole(role)}; use "mutable", "create-only", or "server", optionally followed by " hidden".`,
@@ -85,18 +124,22 @@ export function defineViews<
   }
 
   for (const key of Object.keys(fields)) {
-    if (!Object.hasOwn(shape, key)) {
-      throw new Error(`Field "${key}" is not in the core schema; remove it from the table.`);
+    if (!Object.hasOwn(shape, key) && !(bound && fields[key] === "unmapped")) {
+      throw new Error(
+        bound
+          ? `Field "${key}" is not in the core schema; remove it or classify the row column as "unmapped".`
+          : `Field "${key}" is not in the core schema; remove it from the table.`,
+      );
     }
   }
 
-  // The keyed loop mirrors type filters the compiler cannot follow.
-  // Inference tests pin the asserted correspondence.
+  // The keyed loop mirrors type filters the compiler cannot follow, so the
+  // overloads assert the result. Inference tests pin the correspondence.
   return {
     create: strictObject(create),
     update: strictObject(update),
     read: object(read),
-  } as unknown as ViewsFor<Core, Fields>;
+  };
 }
 
 export type { FieldsFor } from "./types.ts";

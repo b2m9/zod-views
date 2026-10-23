@@ -1,11 +1,12 @@
 import { describe, expect, test } from "vite-plus/test";
 import { z } from "zod";
 
-import { defineViews } from "../src/index.ts";
+import { defineViews, storedAs } from "../src/index.ts";
 
 const defineViewsFromJs = defineViews as unknown as (
   core: unknown,
   fields: Record<string, unknown>,
+  row?: unknown,
 ) => unknown;
 
 function captureError(operation: () => unknown): Error {
@@ -363,4 +364,174 @@ test("definition and composition do not mutate the core or sibling views", () =>
   expect(Object.keys(Core.shape)).toEqual(["id", "title"]);
   expect(Object.keys(Views.update.shape)).toEqual(["title"]);
   expect(Object.keys(Views.create.shape)).toEqual(["title"]);
+});
+
+describe("row binding", () => {
+  type PaymentRow = {
+    id: string;
+    amount: string;
+    note: string | null;
+    railReference: string | null;
+  };
+
+  const PaymentCore = z.object({
+    id: z.uuid(),
+    amount: z.codec(z.number(), z.string(), {
+      decode: (wire) => String(wire),
+      encode: (stored) => Number(stored),
+    }),
+    note: z.string().nullable(),
+  });
+
+  const roles = { id: "server", amount: "create-only", note: "mutable" } as const;
+
+  const Unbound = defineViews(PaymentCore, roles);
+  const Bound = defineViews(
+    PaymentCore,
+    { ...roles, railReference: "unmapped" },
+    storedAs<PaymentRow>(),
+  );
+
+  const row: PaymentRow = {
+    id: "3f975ea5-df7b-4eb0-8585-ef6bf73de57d",
+    amount: "12.50",
+    note: null,
+    railReference: "sepa-123",
+  };
+
+  test("every marker is one frozen object without data", () => {
+    const marker = storedAs<PaymentRow>();
+
+    expect(marker).toBe(storedAs<{ other: string }>());
+    expect(Object.isFrozen(marker)).toBe(true);
+    expect(Object.getPrototypeOf(marker)).toBeNull();
+    expect(Reflect.ownKeys(marker)).toEqual([]);
+  });
+
+  test.each(["create", "update", "read"] as const)("bound %s matches the unbound view", (view) => {
+    expect(Object.keys(Bound[view].shape)).toEqual(Object.keys(Unbound[view].shape));
+    expect(z.toJSONSchema(Bound[view], { io: "input" })).toEqual(
+      z.toJSONSchema(Unbound[view], { io: "input" }),
+    );
+  });
+
+  test("unmapped columns stay out of every view", () => {
+    expect(Bound.create.safeParse({ amount: 1, note: null, railReference: "x" }).success).toBe(
+      false,
+    );
+    expect(Bound.update.safeParse({ railReference: "x" }).success).toBe(false);
+    expect(Bound.read.parse({ ...row, amount: 12.5 })).toEqual({
+      id: row.id,
+      amount: "12.5",
+      note: null,
+    });
+  });
+
+  test("codec cores write the stored form and read through z.encode", () => {
+    expect(Bound.create.parse({ amount: 12.5, note: null })).toEqual({
+      amount: "12.5",
+      note: null,
+    });
+    expect(Bound.update.parse({ note: "paid" })).toEqual({ note: "paid" });
+    expect(z.encode(Bound.read, row)).toEqual({ id: row.id, amount: 12.5, note: null });
+    expect(Bound.read.safeParse(row).success).toBe(false);
+  });
+
+  test("a bound one-way transform cannot read through z.encode", () => {
+    const Core = z.object({ label: z.string().transform((value) => value.length) });
+    const Views = defineViews(Core, { label: "server" }, storedAs<{ label: number }>());
+
+    expect(() => z.encode(Views.read, { label: 3 })).toThrow(z.core.$ZodEncodeError);
+  });
+
+  test("unmapped on a core field names the field", () => {
+    expect(() =>
+      defineViewsFromJs(PaymentCore, { ...roles, note: "unmapped" }, storedAs()),
+    ).toThrow('Field "note" is a core field; "unmapped" is only for row columns');
+  });
+
+  test("unmapped without a bound row is an invalid role", () => {
+    expect(() => defineViewsFromJs(PaymentCore, { ...roles, note: "unmapped" })).toThrow(
+      'Field "note" has invalid role "unmapped"',
+    );
+  });
+
+  test("extra entries without a bound row stay stale", () => {
+    expect(() => defineViewsFromJs(PaymentCore, { ...roles, railReference: "unmapped" })).toThrow(
+      'Field "railReference" is not in the core schema; remove it from the table.',
+    );
+  });
+
+  test("a bound row accepts only unmapped on extra entries", () => {
+    expect(() =>
+      defineViewsFromJs(PaymentCore, { ...roles, railReference: "server" }, storedAs()),
+    ).toThrow(
+      'Field "railReference" is not in the core schema; remove it or classify the row column as "unmapped".',
+    );
+  });
+
+  test("a bound row still requires every core field", () => {
+    expect(() =>
+      defineViewsFromJs(PaymentCore, { id: "server", amount: "create-only" }, storedAs()),
+    ).toThrow('Field "note" is missing from the table');
+  });
+
+  test("row columns are erased, so JavaScript callers may leave them unclassified", () => {
+    const Views = defineViewsFromJs(PaymentCore, roles, storedAs()) as typeof Unbound;
+
+    expect(Object.keys(Views.read.shape)).toEqual(Object.keys(Unbound.read.shape));
+  });
+
+  test.each([{}, Object.freeze(Object.create(null)), null, "row", () => {}])(
+    "a third argument other than the marker throws (case %#)",
+    (marker) => {
+      expect(() => defineViewsFromJs(PaymentCore, roles, marker)).toThrow(
+        "The third argument must be storedAs<Row>()",
+      );
+    },
+  );
+
+  test("binding does not mutate the table", () => {
+    const fields = { ...roles, railReference: "unmapped" } as const;
+    const snapshot = { ...fields };
+
+    defineViews(PaymentCore, fields, storedAs<PaymentRow>());
+
+    expect(fields).toEqual(snapshot);
+  });
+});
+
+test("families nest through extend with a shielded inner update", () => {
+  const AddressCore = z.object({
+    street: z.string(),
+    country: z.enum(["DE", "AT"]).default("DE"),
+    geohash: z.string(),
+  });
+  const Address = defineViews(AddressCore, {
+    street: "mutable",
+    country: "mutable",
+    geohash: "server hidden",
+  });
+  const UnitCore = z.object({ id: z.uuid(), name: z.string(), address: AddressCore });
+  const Unit = defineViews(UnitCore, { id: "server", name: "mutable", address: "mutable" });
+
+  const CreateUnit = Unit.create.extend({ address: Address.create });
+  const UpdateUnit = Unit.update.extend({ address: z.optional(z.nonoptional(Address.update)) });
+  const ReadUnit = Unit.read.extend({ address: Address.read });
+
+  expect(UpdateUnit.parse({ address: { country: "AT" } })).toEqual({ address: { country: "AT" } });
+  expect(UpdateUnit.parse({ name: "x" })).toEqual({ name: "x" });
+  expect(Object.hasOwn(UpdateUnit.parse({ name: "x" }), "address")).toBe(false);
+  expect(
+    ReadUnit.parse({
+      id: "3f975ea5-df7b-4eb0-8585-ef6bf73de57d",
+      name: "n",
+      address: { street: "s", country: "DE", geohash: "g" },
+    }).address,
+  ).toEqual({ street: "s", country: "DE" });
+  expect(
+    CreateUnit.safeParse({ name: "n", address: { street: "s", geohash: "g" } }).error?.issues.map(
+      (issue) => issue.code,
+    ),
+  ).toEqual(["unrecognized_keys"]);
 });

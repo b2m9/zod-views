@@ -14,13 +14,26 @@ that pass.
 
 ## Constraints to preserve
 
-- **The API stays closed.** Export only `defineViews` and `FieldsFor`. Return
-  only `create`, `update`, and `read`. Do not add options or conveniences.
-- **Classification stays exhaustive.** A new core field must fail compilation
-  until it has a role. Runtime checks mirror missing, stale, and invalid table
-  entries for JavaScript callers.
+- **The API stays closed.** Export only `defineViews`, `storedAs`, and
+  `FieldsFor`. Return only `create`, `update`, and `read`. The optional third
+  argument is a type-only row binding, not an options bag; do not add a fourth
+  argument, an object parameter, options, or conveniences.
+- **Classification stays exhaustive.** Unbound, every core field must have a
+  role; bound, every row column must too. A new field or column fails
+  compilation until it is classified. Runtime checks mirror missing, stale,
+  and invalid core entries for JavaScript callers.
 - **Roles stay one flat table.** Writability is `mutable`, `create-only`, or
-  `server`; appending ` hidden` controls read visibility.
+  `server`; appending ` hidden` controls read visibility. `unmapped` is legal
+  only with a bound row, only for columns without a core field, and has no
+  ` hidden` variant.
+- **Bound rows compare outputs.** Each core field's `z.output` must equal its
+  column in type and optionality, and a top-level `any` on either side never
+  matches; nested `any` is not detected, which the README states. A bound
+  result is the unbound result for the same core roles. Do not add an insert
+  check or a second row type.
+- **Row keys are erased at runtime.** `storedAs()` returns one frozen,
+  data-free marker; the runtime only accepts `unmapped` extras when it is
+  passed. Do not fake row exhaustiveness for JavaScript callers.
 - **The shield stays undefined-first.** Every mutable update field is
   `z.optional(z.nonoptional(field))`. `nonoptional` hides the field's optional
   input, so `optional` returns `undefined` without running the field, and the
@@ -52,6 +65,9 @@ that pass.
 
 This package derives a fixed schema family. It is not an authorization layer,
 ORM bridge, OpenAPI generator, relation expander, or PATCH persistence helper.
+It never reads a table definition or generates a schema from one; a bound row
+is a caller-supplied object type, whether it comes from Drizzle, Prisma, or a
+hand-written declaration.
 
 - Prefer ordinary Zod composition over configuration.
 - Keep application policy such as non-empty patches outside the package.

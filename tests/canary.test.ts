@@ -53,3 +53,18 @@ test("object composition distinguishes plain and refined objects", () => {
   expect(() => plain.pick({})).not.toThrow();
   expect(() => refined.pick({})).toThrow();
 });
+
+test("encode reverses object codec fields, and parse rejects their output", () => {
+  const read = z.object({
+    amount: z.codec(z.number(), z.string(), {
+      decode: (wire) => wire.toFixed(2),
+      encode: (stored) => Number(stored),
+    }),
+  });
+
+  const stored = { amount: "12.50", extra: "stripped" };
+
+  expect(read.parse({ amount: 12.5 })).toEqual({ amount: "12.50" });
+  expect(z.encode(read, stored)).toEqual({ amount: 12.5 });
+  expect(read.safeParse(stored).success).toBe(false);
+});
